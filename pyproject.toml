@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "trowel"
+version = "0.0.1"
+description = "TROWEL - a Tool for Retrieving, Organizing, and Wrangling Earth science data and Labels"
+authors = ["caufieldjh <j.harry.caufield@gmail.com>"]
+license = "BSD-3"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+click = "^8.1.7"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
