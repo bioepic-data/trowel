@@ -21,7 +21,8 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
     This also requires an authentication token for ESS-DIVE.
     """
     results = []
-    headers = {"Authorization": token}
+    header_authorization = "bearer {}".format(token)
+    headers={"Authorization":header_authorization}
 
     for identifier in identifiers:
 
@@ -32,6 +33,7 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
         get_packages_url = "{}/{}/{}?&isPublic=true".format(
             BASE_URL, ENDPOINT, identifier
         )
+        print(get_packages_url)
         response = requests.get(get_packages_url, headers=headers)
 
         if response.status_code == 200:
