@@ -44,13 +44,17 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
             # Success - but will need to restructure
             these_results = response.json()
             # Add only doi, id, and title to the dataframe
+            essdive_id = these_results["id"]
+            variables = these_results["dataset"]["variableMeasured"]
+            print(variables)
             entry = pl.DataFrame(
                 {
                     "doi": [identifier],
-                    "id": [these_results["id"]],
+                    "id": [essdive_id],
+                    "variables": ["|".join(variables)],
                 }
             )
-            all_results = all_results.vstack(entry)
+            all_results.vstack(entry, in_place=True)
         else:
             # There was an error
             logger.error(f"Error in response from ESS-DIVE: {response.status_code}")
