@@ -1,6 +1,7 @@
 """CLI for trowel"""
 
 import logging
+import os
 import sys
 
 import click
@@ -12,6 +13,15 @@ __all__ = [
 
 path_option = click.option("-p", "--path", help="Path to a file or directory.")
 
+# Get token from environment
+ESSDIVE_TOKEN = os.getenv("ESSDIVE_TOKEN")
+if not ESSDIVE_TOKEN:
+    logging.error(
+        "You must set the ESS-DIVE authentication token as the ESSDIVE_TOKEN environment variable."
+        "\nSee https://docs.ess-dive.lbl.gov/programmatic-tools/ess-dive-dataset-api#get-access"
+    )
+
+
 @click.group()
 def main():
     """
@@ -22,6 +32,8 @@ def main():
     """
 
     logger = logging.getLogger()
+    logger.setLevel(level=logging.DEBUG)
+
 
 @main.command()
 @path_option
