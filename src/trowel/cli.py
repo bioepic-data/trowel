@@ -1,6 +1,7 @@
 """CLI for trowel"""
 
 import logging
+import sys
 
 import click
 from trowel.wrappers.essdive import get_metadata
@@ -11,7 +12,7 @@ __all__ = [
 
 path_option = click.option("-p", "--path", help="Path to a file or directory.")
 
-
+@click.group()
 def main():
     """
     CLI for trowel.
@@ -20,13 +21,17 @@ def main():
     :param quiet: Boolean to be quiet or verbose.
     """
 
-    logging.basicConfig()
-    logger = logging.root
+    logger = logging.getLogger()
 
-
+@main.command()
 @path_option
 def get_essdive_metadata(path):
     """Given a file containing one DOI per line, return metadata from ESS-DIVE."""
+
+    if not path:
+        logging.error("You must provide a path to a file containing DOIs.")
+        sys.exit()
+
     with open(path, "r") as f:
         identifiers = f.readlines()
 
