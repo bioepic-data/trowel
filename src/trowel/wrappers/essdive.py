@@ -15,26 +15,35 @@ ENDPOINT = "packages"
 logger = logging.getLogger(__name__)
 
 
-def get_metadata(identifiers: list) -> Iterator[dict]:
+def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
+    This also requires an authentication token for ESS-DIVE.
     """
     results = []
-
-    # this does not work as expected
-    # may need auth token even for search?
+    headers = {"Authorization": token}
 
     for identifier in identifiers:
-        get_packages_url = '{}/{}?providerName="{}"&isPublic=true'.format(
+
+        # Check on identifier format first
+        if not identifier.startswith("doi:"):
+            identifier = "doi:" + identifier
+
+        get_packages_url = "{}/{}/{}?&isPublic=true".format(
             BASE_URL, ENDPOINT, identifier
         )
-        get_package_response = requests.get(get_packages_url)
+        response = requests.get(get_packages_url, headers=headers)
 
-        if get_package_response.status_code == 200:
-            # Success
-            results.append(get_package_response.json())
+        if response.status_code == 200:
+            # Success - but will need to check contents
+            results.append(response.json())
         else:
             # There was an error
-            logger.error(get_package_response.text)
+            logger.error(f"Error in response from ESS-DIVE: {response.status_code}")
+            logger.error(response.text)
+            if response.status_code == 401:
+                logger.error(
+                    "You may need to refresh your authentication token for ESS-DIVE."
+                )
 
     return results

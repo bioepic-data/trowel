@@ -47,7 +47,7 @@ def get_essdive_metadata(path):
     with open(path, "r") as f:
         identifiers = f.readlines()
 
-    results = get_metadata(identifiers)
+    results = get_metadata(identifiers, ESSDIVE_TOKEN)
     for result in results:
         print(result)
 
