@@ -25,6 +25,7 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
     # Store results in polars dataframe
 
     all_results = pl.DataFrame()
+    all_variables = pl.DataFrame()
     header_authorization = "bearer {}".format(token)
     headers = {"Authorization": header_authorization}
 
@@ -46,7 +47,9 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
             essdive_id = these_results["id"]
             name = these_results["dataset"]["name"]
             try:
-                variables = these_results["dataset"]["variableMeasured"]
+                variables = normalize_variables(
+                    these_results["dataset"]["variableMeasured"]
+                )
             except KeyError:
                 logger.error(f"No variables found for {identifier}")
                 variables = []
@@ -89,3 +92,21 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
     all_results_tsv = all_results.write_csv(separator="\t")
 
     return all_results_tsv
+
+
+def normalize_variables(variables: list) -> list:
+    """Normalize variables from ESS-DIVE."""
+    normalized = []
+    for var in variables:
+        if ">" in var:
+            # This is a hierarchy but we just want all terms
+            vars = var.split(">")
+            for v in vars:
+                if v in normalized:
+                    continue
+                else:
+                    normalized.append(v.lower().replace("_", " ").strip())
+        else:
+            normalized.append(var.lower().replace("_", " "))
+    normalized.sort()
+    return normalized
