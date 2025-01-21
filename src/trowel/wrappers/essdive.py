@@ -37,14 +37,12 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
         get_packages_url = "{}/{}/{}?&isPublic=true".format(
             BASE_URL, ENDPOINT, identifier
         )
-        print(get_packages_url)
         response = requests.get(get_packages_url, headers=headers)
 
         if response.status_code == 200:
             # Success - but will need to restructure
             these_results = response.json()
             # Add relevant parts to the dataframe
-            print(these_results)
             essdive_id = these_results["id"]
             name = these_results["dataset"]["name"]
             try:
