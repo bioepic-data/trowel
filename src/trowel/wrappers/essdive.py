@@ -43,15 +43,31 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
         if response.status_code == 200:
             # Success - but will need to restructure
             these_results = response.json()
-            # Add only doi, id, and title to the dataframe
+            # Add relevant parts to the dataframe
+            print(these_results)
             essdive_id = these_results["id"]
-            variables = these_results["dataset"]["variableMeasured"]
-            print(variables)
+            name = these_results["dataset"]["name"]
+            try:
+                variables = these_results["dataset"]["variableMeasured"]
+            except KeyError:
+                logger.error(f"No variables found for {identifier}")
+                variables = []
+            desc_text = these_results["dataset"]["description"]
+            site_desc = these_results["dataset"]["spatialCoverage"][0]["description"]
+            try:
+                methods = these_results["dataset"]["measurementTechnique"]
+            except KeyError:
+                logger.error(f"No methods found for {identifier}")
+                methods = []
             entry = pl.DataFrame(
                 {
                     "doi": [identifier],
                     "id": [essdive_id],
+                    "name": [name],
                     "variables": ["|".join(variables)],
+                    "description": [" ".join(desc_text)],
+                    "site_description": [site_desc],
+                    "methods": [" ".join(methods)],
                 }
             )
             all_results.vstack(entry, in_place=True)
