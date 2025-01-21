@@ -71,13 +71,19 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
             all_results.vstack(entry, in_place=True)
         else:
             # There was an error
-            logger.error(f"Error in response from ESS-DIVE: {response.status_code}")
-            logger.error(response.text)
             if response.status_code == 401:
+                logger.error(f"Error in response: {response.status_code}")
                 logger.error(
                     "You may need to refresh your authentication token for ESS-DIVE."
                 )
-            break
+                break
+            elif response.status_code == 404:
+                logger.error(f"No dataset found for {identifier}.")
+                logger.error(response.text)
+            else:
+                logger.error(f"Error in response from ESS-DIVE: {response.status_code}")
+                logger.error(response.text)
+                break
 
     # Transform all_results to tsv before returning
     all_results_tsv = all_results.write_csv(separator="\t")
