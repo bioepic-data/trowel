@@ -54,7 +54,11 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
                 logger.error(f"No variables found for {identifier}")
                 variables = []
             desc_text = these_results["dataset"]["description"]
-            site_desc = these_results["dataset"]["spatialCoverage"][0]["description"]
+            try:
+                site_desc = these_results["dataset"]["spatialCoverage"][0]["description"]
+            except KeyError:
+                logger.error(f"No site description found for {identifier}")
+                site_desc = ""
             try:
                 methods = these_results["dataset"]["measurementTechnique"]
             except KeyError:
