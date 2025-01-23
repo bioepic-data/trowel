@@ -48,6 +48,7 @@ def get_essdive_metadata(path):
         identifiers = f.readlines()
 
     results = get_metadata(identifiers, ESSDIVE_TOKEN)
+    # This is including an extra newline after the id for some reason
     print(results)
 
 

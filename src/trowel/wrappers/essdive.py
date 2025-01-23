@@ -25,7 +25,7 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
     # Store results in polars dataframe
 
     all_results = pl.DataFrame()
-    all_variables = pl.DataFrame()
+    all_variables = {} # key is variable name, value is frequency
     header_authorization = "bearer {}".format(token)
     headers = {"Authorization": header_authorization}
 
@@ -50,6 +50,11 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
                 variables = normalize_variables(
                     these_results["dataset"]["variableMeasured"]
                 )
+                for var in variables:
+                    if var in all_variables:
+                        all_variables[var] += 1
+                    else:
+                        all_variables[var] = 1
             except KeyError:
                 logger.error(f"No variables found for {identifier}")
                 variables = []
@@ -94,6 +99,8 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
 
     # Transform all_results to tsv before returning
     all_results_tsv = all_results.write_csv(separator="\t")
+
+    print(all_variables)
 
     return all_results_tsv
 
