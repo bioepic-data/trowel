@@ -47,11 +47,13 @@ def get_essdive_metadata(path):
     with open(path, "r") as f:
         identifiers = f.readlines()
 
-    results, frequencies = get_metadata(identifiers, ESSDIVE_TOKEN)
-    # This is including an extra newline after the id for some reason
+    results, frequencies, filetable = get_metadata(identifiers, ESSDIVE_TOKEN)
+
+    # TODO: put these all in their own files
     for freq in frequencies:
         print(f"{freq} {frequencies[freq]}")
     print(results)
+    print(filetable)
 
 
 if __name__ == "__main__":

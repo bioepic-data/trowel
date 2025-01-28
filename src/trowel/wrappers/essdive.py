@@ -22,7 +22,9 @@ USER_HEADERS = {
 logger = logging.getLogger(__name__)
 
 
-def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
+def get_metadata(
+    identifiers: list, token: str
+) -> Tuple[Iterator[dict], dict, Iterator[dict]]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
     This also requires an authentication token for ESS-DIVE.
@@ -31,6 +33,7 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
 
     all_results = pl.DataFrame()
     all_variables = {}  # key is variable name, value is frequency
+    all_files = pl.DataFrame()
     header_authorization = "bearer {}".format(token)
     headers = {"Authorization": header_authorization}
 
@@ -51,7 +54,6 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
         if response.status_code == 200:
             # Success - but will need to restructure
             these_results = response.json()
-            print(these_results)
             # Add relevant parts to the dataframe
             essdive_id = these_results["id"]
             name = these_results["dataset"]["name"]
@@ -92,6 +94,24 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
                 }
             )
             all_results.vstack(entry, in_place=True)
+
+            # See if we have file information
+            if "distribution" in these_results["dataset"]:
+                for raw_entry in these_results["dataset"]["distribution"]:
+                    url = raw_entry["contentUrl"]
+                    filename = raw_entry["name"]
+                    encoding = raw_entry["encodingFormat"]
+                    entry = pl.DataFrame(
+                        {
+                            "dataset_id": [essdive_id],
+                            "url": [url],
+                            "name": [filename],
+                            "encoding": [encoding],
+                        }
+                    )
+                    all_files.vstack(entry, in_place=True)
+            else:
+                logger.error(f"No files found for {identifier}")
         else:
             # There was an error
             if response.status_code == 401:
@@ -108,10 +128,12 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
                 logger.error(response.text)
                 break
 
-    # Transform all_results to tsv before returning
+    # Transform dataframes to tsv before returning
     all_results_tsv = all_results.write_csv(separator="\t")
+    all_files_tsv = all_files.write_csv(separator="\t")
 
-    return all_results_tsv, all_variables
+    return all_results_tsv, all_variables, all_files_tsv
+
 
 # WIP
 # def get_column_names(identifiers: list, token: str) -> dict:
