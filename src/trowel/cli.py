@@ -5,7 +5,7 @@ import os
 import sys
 
 import click
-from trowel.wrappers.essdive import get_metadata
+from trowel.wrappers.essdive import get_metadata, get_column_names
 
 __all__ = [
     "main",
@@ -58,6 +58,25 @@ def get_essdive_metadata(path):
 
     with open("filetable.txt", "w") as filetable_file:
         filetable_file.write(str(filetable))
+
+@main.command()
+def get_essdive_column_names():
+    """Get all column names from all data files.
+    Files are those with identifiers retrieved by the get_essdive_metadata function.
+    By default, this is filetable.txt."""
+
+    filetable_path = "filetable.txt"
+
+    if not os.path.exists(filetable_path):
+        logging.error(
+            "You must run get_essdive_metadata first to get the filetable."
+        )
+        sys.exit()
+
+    column_names = get_column_names(filetable_path)
+
+    with open("column_names.txt", "w") as filetable_file:
+        filetable_file.write(str(column_names))
 
 
 if __name__ == "__main__":

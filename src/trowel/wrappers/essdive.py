@@ -17,6 +17,7 @@ ENDPOINT = "packages"
 USER_HEADERS = {
     "user_agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0",
     "content-type": "application/json",
+    "Range": "bytes=0-1000",
 }
 
 logger = logging.getLogger(__name__)
@@ -135,25 +136,36 @@ def get_metadata(
     return all_results_tsv, all_variables, all_files_tsv
 
 
-# WIP
-# def get_column_names(identifiers: list, token: str) -> dict:
-#     """Get dataset column from ESS-DIVE for a list of data identifiers.
-#     The identifiers should be ESS-DIVE dataset IDs.
-#     This also requires an authentication token for ESS-DIVE.
-#     We don't need the entirety of each dataset, just the column names.
-#     """
+def get_column_names(filetable_path: str) -> dict:
+    """Get dataset column from ESS-DIVE for a list of data identifiers.
+    Takes the name/path of the table, as produced by get_metadata,
+    as input.
+    We don't need the entirety of each dataset, just the column names.
+    """
 
-#     try:
-#         response = requests.get(f_url, headers=USER_HEADERS, verify=True, stream=True)
-#         status_code = response.status_code
-#         if status_code == 200:
-#             return response
-#         else:
-#             logger.error(f"Error in response: {response.status_code}")
-#             return None
-#     except Exception as e:
-#         print(f"Encountered an error: {e}")
-#         return None
+    all_columns = {}  # key is column name, value is frequency
+
+    # TODO: check to see if there is a data dictionary first
+    # if so, we'll just read that and skip the other files
+    # Otherwise, we'll iterate through all files
+
+    # TODO: just CSV, TSV, etc
+
+    # Load the file as a polars dataframe
+    filetable = pl.read_csv(filetable_path, separator="\t")
+
+    for url in filetable["url"]:
+        try:
+            response = requests.get(url, headers=USER_HEADERS, verify=True, stream=True)
+            status_code = response.status_code
+            if status_code == 200:
+                print(response.text)
+            else:
+                logger.error(f"Error in response: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"Encountered an error: {e}")
+            return None
 
 
 def normalize_variables(variables: list) -> list:
