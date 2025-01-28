@@ -49,11 +49,15 @@ def get_essdive_metadata(path):
 
     results, frequencies, filetable = get_metadata(identifiers, ESSDIVE_TOKEN)
 
-    # TODO: put these all in their own files
-    for freq in frequencies:
-        print(f"{freq} {frequencies[freq]}")
-    print(results)
-    print(filetable)
+    with open("frequencies.txt", "w") as freq_file:
+        for freq in frequencies:
+            freq_file.write(f"{freq} {frequencies[freq]}\n")
+
+    with open("results.txt", "w") as results_file:
+        results_file.write(str(results))
+
+    with open("filetable.txt", "w") as filetable_file:
+        filetable_file.write(str(filetable))
 
 
 if __name__ == "__main__":
