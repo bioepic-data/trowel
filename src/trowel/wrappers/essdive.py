@@ -14,10 +14,18 @@ BASE_URL = "https://api.ess-dive.lbl.gov"
 
 ENDPOINT = "packages"
 
+USER_HEADERS = {
+    "user_agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0",
+    "content-type": "application/json",
+    "Range": "bytes=0-1000",
+}
+
 logger = logging.getLogger(__name__)
 
 
-def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
+def get_metadata(
+    identifiers: list, token: str
+) -> Tuple[Iterator[dict], dict, Iterator[dict]]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
     This also requires an authentication token for ESS-DIVE.
@@ -26,6 +34,7 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
 
     all_results = pl.DataFrame()
     all_variables = {}  # key is variable name, value is frequency
+    all_files = pl.DataFrame()
     header_authorization = "bearer {}".format(token)
     headers = {"Authorization": header_authorization}
 
@@ -86,6 +95,24 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
                 }
             )
             all_results.vstack(entry, in_place=True)
+
+            # See if we have file information
+            if "distribution" in these_results["dataset"]:
+                for raw_entry in these_results["dataset"]["distribution"]:
+                    url = raw_entry["contentUrl"]
+                    filename = raw_entry["name"]
+                    encoding = raw_entry["encodingFormat"]
+                    entry = pl.DataFrame(
+                        {
+                            "dataset_id": [essdive_id],
+                            "url": [url],
+                            "name": [filename],
+                            "encoding": [encoding],
+                        }
+                    )
+                    all_files.vstack(entry, in_place=True)
+            else:
+                logger.error(f"No files found for {identifier}")
         else:
             # There was an error
             if response.status_code == 401:
@@ -102,10 +129,43 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
                 logger.error(response.text)
                 break
 
-    # Transform all_results to tsv before returning
+    # Transform dataframes to tsv before returning
     all_results_tsv = all_results.write_csv(separator="\t")
+    all_files_tsv = all_files.write_csv(separator="\t")
 
-    return all_results_tsv, all_variables
+    return all_results_tsv, all_variables, all_files_tsv
+
+
+def get_column_names(filetable_path: str) -> dict:
+    """Get dataset column from ESS-DIVE for a list of data identifiers.
+    Takes the name/path of the table, as produced by get_metadata,
+    as input.
+    We don't need the entirety of each dataset, just the column names.
+    """
+
+    all_columns = {}  # key is column name, value is frequency
+
+    # TODO: check to see if there is a data dictionary first
+    # if so, we'll just read that and skip the other files
+    # Otherwise, we'll iterate through all files
+
+    # TODO: just CSV, TSV, etc
+
+    # Load the file as a polars dataframe
+    filetable = pl.read_csv(filetable_path, separator="\t")
+
+    for url in filetable["url"]:
+        try:
+            response = requests.get(url, headers=USER_HEADERS, verify=True, stream=True)
+            status_code = response.status_code
+            if status_code == 200:
+                print(response.text)
+            else:
+                logger.error(f"Error in response: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"Encountered an error: {e}")
+            return None
 
 
 def normalize_variables(variables: list) -> list:
