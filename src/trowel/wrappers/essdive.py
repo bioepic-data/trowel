@@ -25,7 +25,7 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
     # Store results in polars dataframe
 
     all_results = pl.DataFrame()
-    all_variables = {} # key is variable name, value is frequency
+    all_variables = {}  # key is variable name, value is frequency
     header_authorization = "bearer {}".format(token)
     headers = {"Authorization": header_authorization}
 
@@ -34,6 +34,9 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
         # Check on identifier format first
         if not identifier.startswith("doi:"):
             identifier = "doi:" + identifier
+
+        # clean it up
+        identifier = identifier.strip()
 
         get_packages_url = "{}/{}/{}?&isPublic=true".format(
             BASE_URL, ENDPOINT, identifier
@@ -60,7 +63,9 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
                 variables = []
             desc_text = these_results["dataset"]["description"]
             try:
-                site_desc = these_results["dataset"]["spatialCoverage"][0]["description"]
+                site_desc = these_results["dataset"]["spatialCoverage"][0][
+                    "description"
+                ]
             except KeyError:
                 logger.error(f"No site description found for {identifier}")
                 site_desc = ""
