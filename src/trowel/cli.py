@@ -47,8 +47,10 @@ def get_essdive_metadata(path):
     with open(path, "r") as f:
         identifiers = f.readlines()
 
-    results = get_metadata(identifiers, ESSDIVE_TOKEN)
+    results, frequencies = get_metadata(identifiers, ESSDIVE_TOKEN)
     # This is including an extra newline after the id for some reason
+    for freq in frequencies:
+        print(f"{freq} {frequencies[freq]}")
     print(results)
 
 

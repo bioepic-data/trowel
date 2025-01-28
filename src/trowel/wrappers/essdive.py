@@ -6,7 +6,7 @@ import logging
 
 import requests
 
-from typing import Iterator
+from typing import Iterator, Tuple
 
 import polars as pl
 
@@ -17,7 +17,7 @@ ENDPOINT = "packages"
 logger = logging.getLogger(__name__)
 
 
-def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
+def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
     This also requires an authentication token for ESS-DIVE.
@@ -100,9 +100,7 @@ def get_metadata(identifiers: list, token: str) -> Iterator[dict]:
     # Transform all_results to tsv before returning
     all_results_tsv = all_results.write_csv(separator="\t")
 
-    print(all_variables)
-
-    return all_results_tsv
+    return all_results_tsv, all_variables
 
 
 def normalize_variables(variables: list) -> list:
