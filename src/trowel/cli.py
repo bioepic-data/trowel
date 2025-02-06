@@ -5,7 +5,7 @@ import os
 import sys
 
 import click
-from trowel.wrappers.essdive import get_metadata
+from trowel.wrappers.essdive import get_metadata, get_column_names
 
 __all__ = [
     "main",
@@ -47,11 +47,36 @@ def get_essdive_metadata(path):
     with open(path, "r") as f:
         identifiers = f.readlines()
 
-    results, frequencies = get_metadata(identifiers, ESSDIVE_TOKEN)
-    # This is including an extra newline after the id for some reason
-    for freq in frequencies:
-        print(f"{freq} {frequencies[freq]}")
-    print(results)
+    results, frequencies, filetable = get_metadata(identifiers, ESSDIVE_TOKEN)
+
+    with open("frequencies.txt", "w") as freq_file:
+        for freq in frequencies:
+            freq_file.write(f"{freq}\t{frequencies[freq]}\n")
+
+    with open("results.txt", "w") as results_file:
+        results_file.write(str(results))
+
+    with open("filetable.txt", "w") as filetable_file:
+        filetable_file.write(str(filetable))
+
+
+@main.command()
+def get_essdive_column_names():
+    """Get all column names from all data files.
+    Files are those with identifiers retrieved by the get_essdive_metadata function.
+    By default, this is filetable.txt."""
+
+    filetable_path = "filetable.txt"
+
+    if not os.path.exists(filetable_path):
+        logging.error("You must run get_essdive_metadata first to get the filetable.")
+        sys.exit()
+
+    column_names = get_column_names(filetable_path)
+
+    with open("column_names.txt", "w") as filetable_file:
+        for colname in column_names:
+            filetable_file.write(f"{colname}\t{column_names[colname]}\n")
 
 
 if __name__ == "__main__":

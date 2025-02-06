@@ -2,22 +2,29 @@
 
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
-import logging
-
-import requests
-
+from io import StringIO
 from typing import Iterator, Tuple
-
+import csv
+import logging
 import polars as pl
+import requests
 
 BASE_URL = "https://api.ess-dive.lbl.gov"
 
 ENDPOINT = "packages"
 
+USER_HEADERS = {
+    "user_agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0",
+    "content-type": "application/json",
+    "Range": "bytes=0-1000",
+}
+
 logger = logging.getLogger(__name__)
 
 
-def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
+def get_metadata(
+    identifiers: list, token: str
+) -> Tuple[Iterator[dict], dict, Iterator[dict]]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
     This also requires an authentication token for ESS-DIVE.
@@ -26,6 +33,7 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
 
     all_results = pl.DataFrame()
     all_variables = {}  # key is variable name, value is frequency
+    all_files = pl.DataFrame()
     header_authorization = "bearer {}".format(token)
     headers = {"Authorization": header_authorization}
 
@@ -86,6 +94,24 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
                 }
             )
             all_results.vstack(entry, in_place=True)
+
+            # See if we have file information
+            if "distribution" in these_results["dataset"]:
+                for raw_entry in these_results["dataset"]["distribution"]:
+                    url = raw_entry["contentUrl"]
+                    filename = raw_entry["name"]
+                    encoding = raw_entry["encodingFormat"]
+                    entry = pl.DataFrame(
+                        {
+                            "dataset_id": [essdive_id],
+                            "url": [url],
+                            "name": [filename],
+                            "encoding": [encoding],
+                        }
+                    )
+                    all_files.vstack(entry, in_place=True)
+            else:
+                logger.error(f"No files found for {identifier}")
         else:
             # There was an error
             if response.status_code == 401:
@@ -102,10 +128,80 @@ def get_metadata(identifiers: list, token: str) -> Tuple[Iterator[dict], dict]:
                 logger.error(response.text)
                 break
 
-    # Transform all_results to tsv before returning
+    # Transform dataframes to tsv before returning
     all_results_tsv = all_results.write_csv(separator="\t")
+    all_files_tsv = all_files.write_csv(separator="\t")
 
-    return all_results_tsv, all_variables
+    return all_results_tsv, all_variables, all_files_tsv
+
+
+def get_column_names(filetable_path: str) -> dict:
+    """Get dataset column from ESS-DIVE for a list of data identifiers.
+    Takes the name/path of the table, as produced by get_metadata,
+    as input.
+    We don't need the entirety of each dataset, just the column names.
+    """
+
+    all_columns = {}  # key is column name, value is frequency
+
+    # TODO: search for something more header-like if first line doesn't work
+
+    # Load the file as a polars dataframe
+    filetable = pl.read_csv(filetable_path, separator="\t")
+
+    # Get the set of entries with an encoding value of text/csv
+    csv_files = filetable.filter(pl.col("encoding") == "text/csv")
+
+    # Get the set of entries that look like they are data dictionaries
+    data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
+
+    # Remove data dict files from the csv files
+    csv_files = csv_files.join(data_dict_files, on="url", how="anti")
+
+    # Now retrieve the column names, then the data dictionaries
+    i = 0
+    for fileset in [csv_files, data_dict_files]:
+        for url in fileset["url"]:
+            try:
+                response = requests.get(
+                    url, headers=USER_HEADERS, verify=True, stream=True
+                )
+                status_code = response.status_code
+                if status_code == 200:
+                    if i == 1:
+                        # This is a data dictionary, so we want the whole thing
+                        response_text = response.text
+                    else:
+                        # This is a data file, so we just want the header
+                        response_text = response.iter_lines(
+                            decode_unicode=True
+                        ).__next__()
+                else:
+                    logger.error(f"Error in response for {url}: {response.status_code}")
+                    continue
+            except Exception as e:
+                print(f"Encountered an error for {url}: {e}")
+                continue
+
+            if i == 1:
+                data_names = parse_data_dictionary(response_text)
+            else:
+                data_names = parse_header(response_text)
+
+            print(data_names)
+
+            for name in data_names:
+                if name in all_columns:
+                    all_columns[name] += 1
+                else:
+                    all_columns[name] = 1
+        i = i + 1
+
+    # Sort the columns by frequency
+    all_columns = dict(
+        sorted(all_columns.items(), key=lambda item: item[1], reverse=True)
+    )
+    return all_columns
 
 
 def normalize_variables(variables: list) -> list:
@@ -124,3 +220,27 @@ def normalize_variables(variables: list) -> list:
             normalized.append(var.lower().replace("_", " "))
     normalized.sort()
     return normalized
+
+
+def parse_header(header: str) -> list:
+    """Parse header from a data file.
+    Also normalizes."""
+    header_names = []
+    reader = csv.reader(StringIO(header))
+    for row in reader:
+        for name in row:
+            if name != "":
+                header_names.append(name.lower().replace("_", " ").strip())
+    return header_names
+
+
+def parse_data_dictionary(dd: str) -> list:
+    """Parse a data dictionary.
+    Also normalizes."""
+    data_names = []
+    reader = csv.reader(StringIO(dd))
+    for row in reader:
+        name = row[0]
+        if name not in ["", "Column_or_Row_Name"]:
+            data_names.append(name.lower().replace("_", " ").strip())
+    return data_names
