@@ -2,13 +2,12 @@
 
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
-import logging
-
-import requests
-
+from io import StringIO
 from typing import Iterator, Tuple
-
+import csv
+import logging
 import polars as pl
+import requests
 
 BASE_URL = "https://api.ess-dive.lbl.gov"
 
@@ -145,21 +144,28 @@ def get_column_names(filetable_path: str) -> dict:
 
     all_columns = {}  # key is column name, value is frequency
 
-    # TODO: check to see if there is a data dictionary first
-    # if so, we'll just read that and skip the other files
-    # Otherwise, we'll iterate through all files
-
-    # TODO: just CSV, TSV, etc
+    # TODO: parse data dictionaries differently
 
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
 
-    for url in filetable["url"]:
+    # Get the set of entries with an encoding value of text/csv
+    csv_files = filetable.filter(pl.col("encoding") == "text/csv")
+
+    # Get the set of entries that look like they are data dictionaries
+    data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
+
+    # Combine the two sets and remove duplicates
+    all_target_files = (csv_files.join(data_dict_files, on="url", how="left")).unique()
+
+    # Now retrieve the column names
+    for url in all_target_files["url"]:
         try:
             response = requests.get(url, headers=USER_HEADERS, verify=True, stream=True)
             status_code = response.status_code
             if status_code == 200:
-                print(response.text)
+                first_line = response.iter_lines(decode_unicode=True).__next__()
+                print(parse_header(first_line))
             else:
                 logger.error(f"Error in response: {response.status_code}")
                 return None
@@ -184,3 +190,14 @@ def normalize_variables(variables: list) -> list:
             normalized.append(var.lower().replace("_", " "))
     normalized.sort()
     return normalized
+
+
+def parse_header(header: str) -> list:
+    """Parse header from a data file.
+    Also normalizes."""
+    header_names = []
+    reader = csv.reader(StringIO(header))
+    for row in reader:
+        for name in row:
+            header_names.append(name.lower().replace("_", " ").strip())
+    return header_names
