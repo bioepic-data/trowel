@@ -182,6 +182,8 @@ def get_column_names(filetable_path: str) -> dict:
             else:
                 all_columns[name] = 1
 
+    # Sort the columns by frequency
+    all_columns = dict(sorted(all_columns.items(), key=lambda item: item[1], reverse=True))
     return all_columns
 
 
