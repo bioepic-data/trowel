@@ -144,8 +144,6 @@ def get_column_names(filetable_path: str) -> dict:
 
     all_columns = {}  # key is column name, value is frequency
 
-    # TODO: parse data dictionaries differently
-
     # TODO: search for something more header-like if first line doesn't work
 
     # Load the file as a polars dataframe
@@ -157,33 +155,52 @@ def get_column_names(filetable_path: str) -> dict:
     # Get the set of entries that look like they are data dictionaries
     data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
 
-    # Combine the two sets and remove duplicates
-    all_target_files = (csv_files.join(data_dict_files, on="url", how="left")).unique()
+    # Remove data dict files from the csv files
+    csv_files = csv_files.join(data_dict_files, on="url", how="anti")
 
-    # Now retrieve the column names
-    for url in all_target_files["url"]:
-        try:
-            response = requests.get(url, headers=USER_HEADERS, verify=True, stream=True)
-            status_code = response.status_code
-            if status_code == 200:
-                first_line = response.iter_lines(decode_unicode=True).__next__()
-            else:
-                logger.error(f"Error in response for {url}: {response.status_code}")
+    # Now retrieve the column names, then the data dictionaries
+    i = 0
+    for fileset in [csv_files, data_dict_files]:
+        for url in fileset["url"]:
+            try:
+                response = requests.get(
+                    url, headers=USER_HEADERS, verify=True, stream=True
+                )
+                status_code = response.status_code
+                if status_code == 200:
+                    if i == 1:
+                        # This is a data dictionary, so we want the whole thing
+                        response_text = response.text
+                    else:
+                        # This is a data file, so we just want the header
+                        response_text = response.iter_lines(
+                            decode_unicode=True
+                        ).__next__()
+                else:
+                    logger.error(f"Error in response for {url}: {response.status_code}")
+                    continue
+            except Exception as e:
+                print(f"Encountered an error for {url}: {e}")
                 continue
-        except Exception as e:
-            print(f"Encountered an error for {url}: {e}")
-            continue
 
-        header_names = parse_header(first_line)
-        print(header_names)
-        for name in header_names:
-            if name in all_columns:
-                all_columns[name] += 1
+            if i == 1:
+                data_names = parse_data_dictionary(response_text)
             else:
-                all_columns[name] = 1
+                data_names = parse_header(response_text)
+
+            print(data_names)
+
+            for name in data_names:
+                if name in all_columns:
+                    all_columns[name] += 1
+                else:
+                    all_columns[name] = 1
+        i = i + 1
 
     # Sort the columns by frequency
-    all_columns = dict(sorted(all_columns.items(), key=lambda item: item[1], reverse=True))
+    all_columns = dict(
+        sorted(all_columns.items(), key=lambda item: item[1], reverse=True)
+    )
     return all_columns
 
 
@@ -215,3 +232,15 @@ def parse_header(header: str) -> list:
             if name != "":
                 header_names.append(name.lower().replace("_", " ").strip())
     return header_names
+
+
+def parse_data_dictionary(dd: str) -> list:
+    """Parse a data dictionary.
+    Also normalizes."""
+    data_names = []
+    reader = csv.reader(StringIO(dd))
+    for row in reader:
+        name = row[0]
+        if name not in ["", "Column_or_Row_Name"]:
+            data_names.append(name.lower().replace("_", " ").strip())
+    return data_names

@@ -51,7 +51,7 @@ def get_essdive_metadata(path):
 
     with open("frequencies.txt", "w") as freq_file:
         for freq in frequencies:
-            freq_file.write(f"{freq} {frequencies[freq]}\n")
+            freq_file.write(f"{freq}\t{frequencies[freq]}\n")
 
     with open("results.txt", "w") as results_file:
         results_file.write(str(results))
@@ -76,7 +76,7 @@ def get_essdive_column_names():
 
     with open("column_names.txt", "w") as filetable_file:
         for colname in column_names:
-            filetable_file.write(f"{colname} {column_names[colname]}\n")
+            filetable_file.write(f"{colname}\t{column_names[colname]}\n")
 
 
 if __name__ == "__main__":
