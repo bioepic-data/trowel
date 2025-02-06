@@ -146,6 +146,8 @@ def get_column_names(filetable_path: str) -> dict:
 
     # TODO: parse data dictionaries differently
 
+    # TODO: search for something more header-like if first line doesn't work
+
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
 
@@ -165,13 +167,22 @@ def get_column_names(filetable_path: str) -> dict:
             status_code = response.status_code
             if status_code == 200:
                 first_line = response.iter_lines(decode_unicode=True).__next__()
-                print(parse_header(first_line))
             else:
-                logger.error(f"Error in response: {response.status_code}")
-                return None
+                logger.error(f"Error in response for {url}: {response.status_code}")
+                continue
         except Exception as e:
-            print(f"Encountered an error: {e}")
-            return None
+            print(f"Encountered an error for {url}: {e}")
+            continue
+
+        header_names = parse_header(first_line)
+        print(header_names)
+        for name in header_names:
+            if name in all_columns:
+                all_columns[name] += 1
+            else:
+                all_columns[name] = 1
+
+    return all_columns
 
 
 def normalize_variables(variables: list) -> list:
@@ -199,5 +210,6 @@ def parse_header(header: str) -> list:
     reader = csv.reader(StringIO(header))
     for row in reader:
         for name in row:
-            header_names.append(name.lower().replace("_", " ").strip())
+            if name != "":
+                header_names.append(name.lower().replace("_", " ").strip())
     return header_names

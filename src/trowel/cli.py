@@ -59,6 +59,7 @@ def get_essdive_metadata(path):
     with open("filetable.txt", "w") as filetable_file:
         filetable_file.write(str(filetable))
 
+
 @main.command()
 def get_essdive_column_names():
     """Get all column names from all data files.
@@ -68,15 +69,14 @@ def get_essdive_column_names():
     filetable_path = "filetable.txt"
 
     if not os.path.exists(filetable_path):
-        logging.error(
-            "You must run get_essdive_metadata first to get the filetable."
-        )
+        logging.error("You must run get_essdive_metadata first to get the filetable.")
         sys.exit()
 
     column_names = get_column_names(filetable_path)
 
     with open("column_names.txt", "w") as filetable_file:
-        filetable_file.write(str(column_names))
+        for colname in column_names:
+            filetable_file.write(f"{colname} {column_names[colname]}\n")
 
 
 if __name__ == "__main__":
