@@ -11,6 +11,11 @@ __all__ = [
     "main",
 ]
 
+# Configure logging to suppress DEBUG messages from urllib3 and other chatty libraries
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("connectionpool").setLevel(logging.WARNING)
+
 path_option = click.option(
     "-p", "--path", help="Path to a file or directory.", required=False)
 outpath_option = click.option(
@@ -34,8 +39,15 @@ def main():
     :param quiet: Boolean to be quiet or verbose.
     """
 
+    # Configure the root logger
     logger = logging.getLogger()
     logger.setLevel(level=logging.DEBUG)
+
+    # Set up console handler with a cleaner format
+    ch = logging.StreamHandler()
+    formatter = logging.Formatter('%(levelname)s: %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
 
 @main.command()
@@ -85,15 +97,17 @@ def get_essdive_column_names(path, outpath):
 
     if not os.path.exists(filetable_path):
         logging.error(f"The filetable file {filetable_path} does not exist.")
-        logging.error("You must run get_essdive_metadata first to get the filetable.")
+        logging.error(
+            "You must run get_essdive_metadata first to get the filetable.")
         sys.exit()
 
     if not os.path.exists(outpath):
-        logging.error(f"The specified output directory '{outpath}' does not exist.")
+        logging.error(
+            f"The specified output directory '{outpath}' does not exist.")
         sys.exit()
 
     column_names_path = get_column_names(filetable_path, outpath)
-    
+
     logging.info(f"Column names written to {column_names_path}")
 
 
