@@ -133,13 +133,21 @@ def get_metadata(
                 )
                 break
             elif response.status_code == 404:
-                logger.error(f"No dataset found for {identifier}.")
+                logger.error(f"No dataset found for {identifier}")
                 logger.error(response.text)
             else:
                 logger.error(
                     f"Error in response from ESS-DIVE: {response.status_code}")
                 logger.error(response.text)
                 break
+
+    # Check if dataframes are empty and log errors if they are
+    if all_results.is_empty():
+        logger.error(
+            "No metadata results were found for the provided identifiers")
+
+    if all_files.is_empty():
+        logger.error("No files were found for the provided identifiers")
 
     # Transform dataframes to tsv before returning
     all_results_tsv = all_results.write_csv(separator="\t")
