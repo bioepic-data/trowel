@@ -49,17 +49,20 @@ def get_essdive_metadata(path, outpath):
     """
 
     if not path:
-        logging.error("You must provide a path to a file containing DOIs with the --path option.")
+        logging.error(
+            "You must provide a path to a file containing DOIs with the --path option.")
         sys.exit()
 
     if not os.path.exists(outpath):
-        logging.error(f"The specified output directory '{outpath}' does not exist.")
+        logging.error(
+            f"The specified output directory '{outpath}' does not exist.")
         sys.exit()
 
     with open(path, "r") as f:
         identifiers = f.readlines()
 
-    results_path, frequencies_path, filetable_path = get_metadata(identifiers, ESSDIVE_TOKEN, outpath)
+    results_path, frequencies_path, filetable_path = get_metadata(
+        identifiers, ESSDIVE_TOKEN, outpath)
 
     logging.info(f"Results written to {results_path}")
     logging.info(f"Frequencies written to {frequencies_path}")
@@ -69,24 +72,42 @@ def get_essdive_metadata(path, outpath):
 @main.command()
 @path_option
 @outpath_option
-def get_essdive_column_names(outpath):
+def get_essdive_column_names(path, outpath):
     """Get all column names from all data files.
     Files are those with identifiers retrieved by the get_essdive_metadata function.
-    By default, this is filetable.txt."""
+    By default, this is filetable.txt.
+    Parameters:
+    path: Path to a directory containing the filetable file.
+    outpath: Directory where output files should be written. Assumed to be the same as path if not provided.
+    """
+
+    if not path:
+        logging.error(
+            "You must provide a path to the directory containing output from get_essdive_metadata.")
+        sys.exit()
+    if not os.path.exists(path):
+        logging.error(
+            f"The specified path '{path}' does not exist.")
+        sys.exit()
 
     filetable_path = os.path.join(outpath, "filetable.txt")
 
     if not os.path.exists(filetable_path):
-        logging.error("You must run get_essdive_metadata first to get the filetable.")
+        logging.error(
+            "Could not find file table at specified path.")
         sys.exit()
 
-    column_names = get_column_names(filetable_path)
+    if not outpath:
+        outpath = path
+        logging.info(
+            f"Output path not provided. Using the same path as input: {outpath}")
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+        logging.info(
+            f"Output path '{outpath}' does not exist. Creating it.")
 
-    column_names_path = os.path.join(outpath, "column_names.txt")
-    with open(column_names_path, "w") as filetable_file:
-        for colname in column_names:
-            filetable_file.write(f"{colname}\t{column_names[colname]}\n")
-    
+    column_names_path = get_column_names(filetable_path, outpath)
+
     logging.info(f"Column names written to {column_names_path}")
 
 

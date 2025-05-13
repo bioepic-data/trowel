@@ -238,7 +238,7 @@ def get_metadata(
     return results_path, frequencies_path, filetable_path
 
 
-def get_column_names(filetable_path: str) -> dict:
+def get_column_names(filetable_path: str, outpath: str = ".") -> dict:
     """Get dataset column from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
     as input.
@@ -246,6 +246,8 @@ def get_column_names(filetable_path: str) -> dict:
     """
 
     all_columns = {}  # key is column name, value is frequency
+
+    # TODO: parse FLMD files
 
     # TODO: search for something more header-like if first line doesn't work
 
@@ -305,7 +307,14 @@ def get_column_names(filetable_path: str) -> dict:
     all_columns = dict(
         sorted(all_columns.items(), key=lambda item: item[1], reverse=True)
     )
-    return all_columns
+    
+    # Write the sorted columns to a file
+    columns_path = f"{outpath}/column_names.tsv"
+    with open(columns_path, "w") as f:
+        for column, frequency in all_columns.items():
+            f.write(f"{column}\t{frequency}\n")
+    
+    return columns_path
 
 
 def normalize_variables(variables: list) -> list:
