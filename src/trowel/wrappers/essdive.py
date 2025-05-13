@@ -24,21 +24,57 @@ logger = logging.getLogger(__name__)
 
 
 def get_metadata(
-    identifiers: list, token: str
-) -> Tuple[Iterator[dict], dict, Iterator[dict]]:
+    identifiers: list, token: str, outpath: str = "."
+) -> Tuple[str, dict, str]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
     This also requires an authentication token for ESS-DIVE.
-    """
-    # Store results in polars dataframe
 
-    all_results = pl.DataFrame()
+    Results are streamed to files in the specified output directory as they are received.
+
+    Args:
+        identifiers: List of DOI identifiers
+        token: ESS-DIVE authentication token
+        outpath: Directory to write output files (defaults to current directory)
+
+    Returns:
+        Tuple containing paths to the results, variables frequency file, and file table file
+    """
+    # Create output file paths
+    results_path = f"{outpath}/results.txt"
+    filetable_path = f"{outpath}/filetable.txt"
+
+    # Initialize empty files with headers
+    results_schema = pl.DataFrame(
+        schema={
+            "doi": pl.Utf8,
+            "id": pl.Utf8,
+            "name": pl.Utf8,
+            "variables": pl.Utf8,
+            "description": pl.Utf8,
+            "site_description": pl.Utf8,
+            "methods": pl.Utf8,
+        }
+    )
+    results_schema.write_csv(results_path, separator="\t")
+
+    files_schema = pl.DataFrame(
+        schema={
+            "dataset_id": pl.Utf8,
+            "url": pl.Utf8,
+            "name": pl.Utf8,
+            "encoding": pl.Utf8,
+        }
+    )
+    files_schema.write_csv(filetable_path, separator="\t")
+
     all_variables = {}  # key is variable name, value is frequency
-    all_files = pl.DataFrame()
     headers = {"Authorization": f"Bearer {token}"}
 
-    for identifier in identifiers:
+    results_found = False
+    files_found = False
 
+    for identifier in identifiers:
         # Check on identifier format first
         if identifier.startswith("https://doi.org/"):
             # This is a full DOI, so we need to strip it down
@@ -60,7 +96,8 @@ def get_metadata(
         get_packages_url = "{}/{}/{}?&isPublic=true".format(
             BASE_URL, ENDPOINT, identifier
         )
-        response = requests.get(get_packages_url, headers=headers, verify=True, stream=True)
+        response = requests.get(
+            get_packages_url, headers=headers, verify=True, stream=True)
 
         if response.status_code == 200:
             # Success - but will need to restructure
@@ -93,6 +130,8 @@ def get_metadata(
             except KeyError:
                 logger.error(f"No methods found for {identifier}")
                 methods = []
+
+            # Create entry for results and append to file
             entry = pl.DataFrame(
                 {
                     "doi": [identifier],
@@ -104,7 +143,10 @@ def get_metadata(
                     "methods": [" ".join(methods)],
                 }
             )
-            all_results.vstack(entry, in_place=True)
+            # Append to results file
+            with open(results_path, "a") as f:
+                entry.write_csv(f, separator="\t", include_header=False)
+            results_found = True
 
             # See if we have file information
             if "distribution" in these_results["dataset"]:
@@ -112,7 +154,7 @@ def get_metadata(
                     url = raw_entry["contentUrl"]
                     filename = raw_entry["name"]
                     encoding = raw_entry["encodingFormat"]
-                    entry = pl.DataFrame(
+                    file_entry = pl.DataFrame(
                         {
                             "dataset_id": [essdive_id],
                             "url": [url],
@@ -120,7 +162,11 @@ def get_metadata(
                             "encoding": [encoding],
                         }
                     )
-                    all_files.vstack(entry, in_place=True)
+                    # Append to filetable
+                    with open(filetable_path, "a") as f:
+                        file_entry.write_csv(
+                            f, separator="\t", include_header=False)
+                    files_found = True
             else:
                 logger.error(f"No files found for {identifier}")
         else:
@@ -140,19 +186,21 @@ def get_metadata(
                 logger.error(response.text)
                 break
 
-    # Check if dataframes are empty and log errors if they are
-    if all_results.is_empty():
+    # Check if files have content and log errors if they don't
+    if not results_found:
         logger.error(
             "No metadata results were found for the provided identifiers")
 
-    if all_files.is_empty():
+    if not files_found:
         logger.error("No files were found for the provided identifiers")
 
-    # Transform dataframes to tsv before returning
-    all_results_tsv = all_results.write_csv(separator="\t")
-    all_files_tsv = all_files.write_csv(separator="\t")
+    # Write frequencies to file
+    frequencies_path = f"{outpath}/frequencies.txt"
+    with open(frequencies_path, "w") as freq_file:
+        for freq in all_variables:
+            freq_file.write(f"{freq}\t{all_variables[freq]}\n")
 
-    return all_results_tsv, all_variables, all_files_tsv
+    return results_path, frequencies_path, filetable_path
 
 
 def get_column_names(filetable_path: str) -> dict:
