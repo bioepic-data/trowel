@@ -75,6 +75,17 @@ def get_metadata(
     results_found = False
     files_found = False
 
+    # Dictionary to collect errors
+    errors = {
+        "no_variables": [],
+        "no_site_description": [],
+        "no_methods": [],
+        "no_files": [],
+        "authorization": [],
+        "not_found": [],
+        "other_errors": []
+    }
+
     # Add tqdm progress bar
     for identifier in tqdm(identifiers, desc="Processing identifiers", unit="entry"):
         # Check on identifier format first
@@ -117,7 +128,7 @@ def get_metadata(
                     else:
                         all_variables[var] = 1
             except KeyError:
-                logger.error(f"No variables found for {identifier}")
+                errors["no_variables"].append(identifier)
                 variables = []
             desc_text = these_results["dataset"]["description"]
             try:
@@ -125,12 +136,12 @@ def get_metadata(
                     "description"
                 ]
             except KeyError:
-                logger.error(f"No site description found for {identifier}")
+                errors["no_site_description"].append(identifier)
                 site_desc = ""
             try:
                 methods = these_results["dataset"]["measurementTechnique"]
             except KeyError:
-                logger.error(f"No methods found for {identifier}")
+                errors["no_methods"].append(identifier)
                 methods = []
 
             # Create entry for results and append to file
@@ -170,22 +181,19 @@ def get_metadata(
                             f, separator="\t", include_header=False)
                     files_found = True
             else:
-                logger.error(f"No files found for {identifier}")
+                errors["no_files"].append(identifier)
         else:
             # There was an error
             if response.status_code == 401:
-                logger.error(f"Error in response: {response.status_code}")
+                errors["authorization"].append(identifier)
                 logger.error(
                     "You may need to refresh your authentication token for ESS-DIVE."
                 )
                 break
             elif response.status_code == 404:
-                logger.error(f"No dataset found for {identifier}")
-                logger.error(response.text)
+                errors["not_found"].append(identifier)
             else:
-                logger.error(
-                    f"Error in response from ESS-DIVE: {response.status_code}")
-                logger.error(response.text)
+                errors["other_errors"].append(f"{identifier} (status code: {response.status_code})")
                 break
 
     # Check if files have content and log errors if they don't
@@ -201,6 +209,31 @@ def get_metadata(
     with open(frequencies_path, "w") as freq_file:
         for freq in all_variables:
             freq_file.write(f"{freq}\t{all_variables[freq]}\n")
+
+    # Log all collected errors
+    if any(errors.values()):
+        logger.error("The following errors occurred during processing:")
+        
+        if errors["no_variables"]:
+            logger.error(f"No variables found for: {', '.join(errors['no_variables'])}")
+            
+        if errors["no_site_description"]:
+            logger.error(f"No site description found for: {', '.join(errors['no_site_description'])}")
+            
+        if errors["no_methods"]:
+            logger.error(f"No methods found for: {', '.join(errors['no_methods'])}")
+            
+        if errors["no_files"]:
+            logger.error(f"No files found for: {', '.join(errors['no_files'])}")
+            
+        if errors["authorization"]:
+            logger.error(f"Authorization errors for: {', '.join(errors['authorization'])}")
+            
+        if errors["not_found"]:
+            logger.error(f"Datasets not found for: {', '.join(errors['not_found'])}")
+            
+        if errors["other_errors"]:
+            logger.error(f"Other errors: {', '.join(errors['other_errors'])}")
 
     return results_path, frequencies_path, filetable_path
 
