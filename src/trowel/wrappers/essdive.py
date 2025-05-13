@@ -193,7 +193,8 @@ def get_metadata(
             elif response.status_code == 404:
                 errors["not_found"].append(identifier)
             else:
-                errors["other_errors"].append(f"{identifier} (status code: {response.status_code})")
+                errors["other_errors"].append(
+                    f"{identifier} (status code: {response.status_code})")
                 break
 
     # Check if files have content and log errors if they don't
@@ -213,25 +214,31 @@ def get_metadata(
     # Log all collected errors
     if any(errors.values()):
         logger.error("The following errors occurred during processing:")
-        
+
         if errors["no_variables"]:
-            logger.error(f"No variables found for: {', '.join(errors['no_variables'])}")
-            
+            logger.error(
+                f"No variables found for: {', '.join(errors['no_variables'])}")
+
         if errors["no_site_description"]:
-            logger.error(f"No site description found for: {', '.join(errors['no_site_description'])}")
-            
+            logger.error(
+                f"No site description found for: {', '.join(errors['no_site_description'])}")
+
         if errors["no_methods"]:
-            logger.error(f"No methods found for: {', '.join(errors['no_methods'])}")
-            
+            logger.error(
+                f"No methods found for: {', '.join(errors['no_methods'])}")
+
         if errors["no_files"]:
-            logger.error(f"No files found for: {', '.join(errors['no_files'])}")
-            
+            logger.error(
+                f"No files found for: {', '.join(errors['no_files'])}")
+
         if errors["authorization"]:
-            logger.error(f"Authorization errors for: {', '.join(errors['authorization'])}")
-            
+            logger.error(
+                f"Authorization errors for: {', '.join(errors['authorization'])}")
+
         if errors["not_found"]:
-            logger.error(f"Datasets not found for: {', '.join(errors['not_found'])}")
-            
+            logger.error(
+                f"Datasets not found for: {', '.join(errors['not_found'])}")
+
         if errors["other_errors"]:
             logger.error(f"Other errors: {', '.join(errors['other_errors'])}")
 
@@ -242,25 +249,37 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     """Get dataset column names from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
     as input.
-    
+
     Column names are streamed to an output file as they are collected.
-    
+
     Args:
         filetable_path: Path to the filetable created by get_metadata
         outpath: Directory to write output file (defaults to current directory)
-    
+
     Returns:
         Path to the column names output file
     """
+
+    # TODO: parse FLMD files
+    # The FLMD serve as a guide to the other files in a package,
+    # but aren't as important to tracking column names themselves.
+
+    # TODO: count frequencies per package, not per file,
+    # since some packages have multiple files with the same column names
+
+    # TODO: expand set of accepted encodings
+
+    # TODO: in normalization, try to separate units from names
+
     # Define the output file path
     column_names_path = f"{outpath}/column_names.txt"
-    
+
     # Initialize the column frequency dictionary for tracking
     column_frequencies = {}
-    
+
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
-    
+
     # Create dictionaries for tracking errors
     errors = {
         "failed_urls": [],
@@ -275,18 +294,19 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
     # Remove data dict files from the csv files
     csv_files = csv_files.join(data_dict_files, on="url", how="anti")
-    
+
     # Initialize the output file
     with open(column_names_path, "w") as f:
         f.write("column_name\tfrequency\n")
-    
+
     # Process files with a progress bar
     file_count = len(csv_files) + len(data_dict_files)
-    
+    logging.info(f"Processing {file_count} files...")
+
     # Now retrieve the column names, then the data dictionaries
-    for i, fileset_name in enumerate([("Data files", csv_files), ("Data dictionaries", data_dict_files)]):
+    for i, fileset_name in enumerate([("data files", csv_files), ("data dictionaries", data_dict_files)]):
         name, fileset = fileset_name
-        
+
         for url in tqdm(fileset["url"], desc=f"Processing {name}", unit="file"):
             try:
                 response = requests.get(
@@ -313,7 +333,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                         else:
                             column_frequencies[name] = 1
                             new_columns = True
-                    
+
                     # If we found new columns, append them to the file
                     if new_columns:
                         with open(column_names_path, "a") as f:
@@ -321,7 +341,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                 if freq == 1:  # Only write new columns
                                     f.write(f"{column}\t{freq}\n")
                 else:
-                    errors["response_errors"].append(f"{url} (status code: {response.status_code})")
+                    errors["response_errors"].append(
+                        f"{url} (status code: {response.status_code})")
                     continue
             except Exception as e:
                 # Yeah I don't really like this much but so it goes
@@ -330,21 +351,23 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
     # After processing all files, update the file with final frequencies
     # This overwrites the file with the complete, sorted results
-    sorted_columns = sorted(column_frequencies.items(), key=lambda item: item[1], reverse=True)
-    
+    sorted_columns = sorted(column_frequencies.items(),
+                            key=lambda item: item[1], reverse=True)
+
     with open(column_names_path, "w") as f:
         f.write("column_name\tfrequency\n")
         for column, frequency in sorted_columns:
             f.write(f"{column}\t{frequency}\n")
-    
+
     # Log any errors that occurred during processing
     if errors["response_errors"]:
-        logger.error(f"Response errors for {len(errors['response_errors'])} URLs")
+        logger.error(
+            f"Response errors for {len(errors['response_errors'])} URLs")
         for url in errors["response_errors"][:5]:  # Log first few errors
             logger.error(f"  {url}")
         if len(errors["response_errors"]) > 5:
             logger.error(f"  ...and {len(errors['response_errors']) - 5} more")
-            
+
     if errors["failed_urls"]:
         logger.error(f"Failed to process {len(errors['failed_urls'])} URLs")
         for url in errors["failed_urls"][:5]:  # Log first few errors
