@@ -35,17 +35,16 @@ def get_metadata(
     all_results = pl.DataFrame()
     all_variables = {}  # key is variable name, value is frequency
     all_files = pl.DataFrame()
-    header_authorization = "bearer {}".format(token)
-    headers = {"Authorization": header_authorization}
+    headers = {"Authorization": f"Bearer {token}"}
 
     for identifier in identifiers:
 
         # Check on identifier format first
         if identifier.startswith("https://doi.org/"):
             # This is a full DOI, so we need to strip it down
-            identifier = identifier.replace("https://doi.org/", "doi:")
+            identifier = identifier.replace("https://doi.org/", "")
         elif identifier.startswith("doi.org/"):
-            identifier = identifier.replace("doi.org/", "doi:")
+            identifier = identifier.replace("doi.org/", "")
 
         # clean it up
         identifier = identifier.strip()
@@ -61,7 +60,7 @@ def get_metadata(
         get_packages_url = "{}/{}/{}?&isPublic=true".format(
             BASE_URL, ENDPOINT, identifier
         )
-        response = requests.get(get_packages_url, headers=headers)
+        response = requests.get(get_packages_url, headers=headers, verify=True, stream=True)
 
         if response.status_code == 200:
             # Success - but will need to restructure
