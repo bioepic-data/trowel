@@ -238,21 +238,34 @@ def get_metadata(
     return results_path, frequencies_path, filetable_path
 
 
-def get_column_names(filetable_path: str, outpath: str = ".") -> dict:
-    """Get dataset column from ESS-DIVE for a list of data identifiers.
+def get_column_names(filetable_path: str, outpath: str = ".") -> str:
+    """Get dataset column names from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
     as input.
-    We don't need the entirety of each dataset, just the column names.
+    
+    Column names are streamed to an output file as they are collected.
+    
+    Args:
+        filetable_path: Path to the filetable created by get_metadata
+        outpath: Directory to write output file (defaults to current directory)
+    
+    Returns:
+        Path to the column names output file
     """
-
-    all_columns = {}  # key is column name, value is frequency
-
-    # TODO: parse FLMD files
-
-    # TODO: search for something more header-like if first line doesn't work
-
+    # Define the output file path
+    column_names_path = f"{outpath}/column_names.txt"
+    
+    # Initialize the column frequency dictionary for tracking
+    column_frequencies = {}
+    
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
+    
+    # Create dictionaries for tracking errors
+    errors = {
+        "failed_urls": [],
+        "response_errors": []
+    }
 
     # Get the set of entries with an encoding value of text/csv
     csv_files = filetable.filter(pl.col("encoding") == "text/csv")
@@ -262,59 +275,84 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> dict:
 
     # Remove data dict files from the csv files
     csv_files = csv_files.join(data_dict_files, on="url", how="anti")
-
+    
+    # Initialize the output file
+    with open(column_names_path, "w") as f:
+        f.write("column_name\tfrequency\n")
+    
+    # Process files with a progress bar
+    file_count = len(csv_files) + len(data_dict_files)
+    
     # Now retrieve the column names, then the data dictionaries
-    i = 0
-    for fileset in [csv_files, data_dict_files]:
-        for url in fileset["url"]:
+    for i, fileset_name in enumerate([("Data files", csv_files), ("Data dictionaries", data_dict_files)]):
+        name, fileset = fileset_name
+        
+        for url in tqdm(fileset["url"], desc=f"Processing {name}", unit="file"):
             try:
                 response = requests.get(
                     url, headers=USER_HEADERS, verify=True, stream=True
                 )
                 status_code = response.status_code
                 if status_code == 200:
-                    if i == 1:
+                    if i == 1:  # Data dictionary
                         # This is a data dictionary, so we want the whole thing
                         response_text = response.text
-                    else:
+                        data_names = parse_data_dictionary(response_text)
+                    else:  # CSV data file
                         # This is a data file, so we just want the header
                         response_text = response.iter_lines(
                             decode_unicode=True
                         ).__next__()
+                        data_names = parse_header(response_text)
+
+                    # Update column frequencies
+                    new_columns = False
+                    for name in data_names:
+                        if name in column_frequencies:
+                            column_frequencies[name] += 1
+                        else:
+                            column_frequencies[name] = 1
+                            new_columns = True
+                    
+                    # If we found new columns, append them to the file
+                    if new_columns:
+                        with open(column_names_path, "a") as f:
+                            for column, freq in column_frequencies.items():
+                                if freq == 1:  # Only write new columns
+                                    f.write(f"{column}\t{freq}\n")
                 else:
-                    logger.error(
-                        f"Error in response for {url}: {response.status_code}")
+                    errors["response_errors"].append(f"{url} (status code: {response.status_code})")
                     continue
             except Exception as e:
-                print(f"Encountered an error for {url}: {e}")
+                # Yeah I don't really like this much but so it goes
+                errors["failed_urls"].append(f"{url} ({str(e)})")
                 continue
 
-            if i == 1:
-                data_names = parse_data_dictionary(response_text)
-            else:
-                data_names = parse_header(response_text)
-
-            print(data_names)
-
-            for name in data_names:
-                if name in all_columns:
-                    all_columns[name] += 1
-                else:
-                    all_columns[name] = 1
-        i = i + 1
-
-    # Sort the columns by frequency
-    all_columns = dict(
-        sorted(all_columns.items(), key=lambda item: item[1], reverse=True)
-    )
+    # After processing all files, update the file with final frequencies
+    # This overwrites the file with the complete, sorted results
+    sorted_columns = sorted(column_frequencies.items(), key=lambda item: item[1], reverse=True)
     
-    # Write the sorted columns to a file
-    columns_path = f"{outpath}/column_names.tsv"
-    with open(columns_path, "w") as f:
-        for column, frequency in all_columns.items():
+    with open(column_names_path, "w") as f:
+        f.write("column_name\tfrequency\n")
+        for column, frequency in sorted_columns:
             f.write(f"{column}\t{frequency}\n")
     
-    return columns_path
+    # Log any errors that occurred during processing
+    if errors["response_errors"]:
+        logger.error(f"Response errors for {len(errors['response_errors'])} URLs")
+        for url in errors["response_errors"][:5]:  # Log first few errors
+            logger.error(f"  {url}")
+        if len(errors["response_errors"]) > 5:
+            logger.error(f"  ...and {len(errors['response_errors']) - 5} more")
+            
+    if errors["failed_urls"]:
+        logger.error(f"Failed to process {len(errors['failed_urls'])} URLs")
+        for url in errors["failed_urls"][:5]:  # Log first few errors
+            logger.error(f"  {url}")
+        if len(errors["failed_urls"]) > 5:
+            logger.error(f"  ...and {len(errors['failed_urls']) - 5} more")
+
+    return column_names_path
 
 
 def normalize_variables(variables: list) -> list:

@@ -75,39 +75,25 @@ def get_essdive_metadata(path, outpath):
 def get_essdive_column_names(path, outpath):
     """Get all column names from all data files.
     Files are those with identifiers retrieved by the get_essdive_metadata function.
-    By default, this is filetable.txt.
-    Parameters:
-    path: Path to a directory containing the filetable file.
-    outpath: Directory where output files should be written. Assumed to be the same as path if not provided.
-    """
+    By default, this is filetable.txt."""
 
+    # If path is not provided, look for filetable.txt in the outpath directory
     if not path:
-        logging.error(
-            "You must provide a path to the directory containing output from get_essdive_metadata.")
-        sys.exit()
-    if not os.path.exists(path):
-        logging.error(
-            f"The specified path '{path}' does not exist.")
-        sys.exit()
-
-    filetable_path = os.path.join(outpath, "filetable.txt")
+        filetable_path = os.path.join(outpath, "filetable.txt")
+    else:
+        filetable_path = path
 
     if not os.path.exists(filetable_path):
-        logging.error(
-            "Could not find file table at specified path.")
+        logging.error(f"The filetable file {filetable_path} does not exist.")
+        logging.error("You must run get_essdive_metadata first to get the filetable.")
         sys.exit()
 
-    if not outpath:
-        outpath = path
-        logging.info(
-            f"Output path not provided. Using the same path as input: {outpath}")
     if not os.path.exists(outpath):
-        os.makedirs(outpath)
-        logging.info(
-            f"Output path '{outpath}' does not exist. Creating it.")
+        logging.error(f"The specified output directory '{outpath}' does not exist.")
+        sys.exit()
 
     column_names_path = get_column_names(filetable_path, outpath)
-
+    
     logging.info(f"Column names written to {column_names_path}")
 
 
