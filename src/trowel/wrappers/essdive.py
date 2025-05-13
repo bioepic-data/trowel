@@ -4,7 +4,7 @@
 
 from io import StringIO
 import sys
-from typing import Iterator, Tuple
+from typing import Tuple
 import csv
 import logging
 import polars as pl
@@ -20,6 +20,8 @@ USER_HEADERS = {
     "content-type": "application/json",
     "Range": "bytes=0-1000",
 }
+
+PARSIBLE_ENCODINGS = ["text/csv"]
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +288,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
         "response_errors": []
     }
 
-    # Get the set of entries with an encoding value of text/csv
+    # Get the set of entries with an encoding value we can parse
     csv_files = filetable.filter(pl.col("encoding") == "text/csv")
 
     # Get the set of entries that look like they are data dictionaries
