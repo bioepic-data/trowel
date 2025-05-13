@@ -3,6 +3,7 @@
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
 from io import StringIO
+import sys
 from typing import Iterator, Tuple
 import csv
 import logging
@@ -40,11 +41,22 @@ def get_metadata(
     for identifier in identifiers:
 
         # Check on identifier format first
-        if not identifier.startswith("doi:"):
-            identifier = "doi:" + identifier
+        if identifier.startswith("https://doi.org/"):
+            # This is a full DOI, so we need to strip it down
+            identifier = identifier.replace("https://doi.org/", "doi:")
+        elif identifier.startswith("doi.org/"):
+            identifier = identifier.replace("doi.org/", "doi:")
 
         # clean it up
         identifier = identifier.strip()
+
+        # Check if this is a DOI anyway
+        if identifier.startswith("ess-dive"):
+            sys.exit(
+                f"The provided identifier {identifier} does not appear to be a DOI. Please check the format."
+            )
+        if not identifier.startswith("doi:"):
+            identifier = "doi:" + identifier
 
         get_packages_url = "{}/{}/{}?&isPublic=true".format(
             BASE_URL, ENDPOINT, identifier
@@ -124,7 +136,8 @@ def get_metadata(
                 logger.error(f"No dataset found for {identifier}.")
                 logger.error(response.text)
             else:
-                logger.error(f"Error in response from ESS-DIVE: {response.status_code}")
+                logger.error(
+                    f"Error in response from ESS-DIVE: {response.status_code}")
                 logger.error(response.text)
                 break
 
@@ -177,7 +190,8 @@ def get_column_names(filetable_path: str) -> dict:
                             decode_unicode=True
                         ).__next__()
                 else:
-                    logger.error(f"Error in response for {url}: {response.status_code}")
+                    logger.error(
+                        f"Error in response for {url}: {response.status_code}")
                     continue
             except Exception as e:
                 print(f"Encountered an error for {url}: {e}")
