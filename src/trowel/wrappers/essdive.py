@@ -9,6 +9,7 @@ import csv
 import logging
 import polars as pl
 import requests
+from tqdm import tqdm
 
 BASE_URL = "https://api.ess-dive.lbl.gov"
 
@@ -74,7 +75,8 @@ def get_metadata(
     results_found = False
     files_found = False
 
-    for identifier in identifiers:
+    # Add tqdm progress bar
+    for identifier in tqdm(identifiers, desc="Processing identifiers", unit="entry"):
         # Check on identifier format first
         if identifier.startswith("https://doi.org/"):
             # This is a full DOI, so we need to strip it down
