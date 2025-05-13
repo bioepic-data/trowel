@@ -289,7 +289,10 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     }
 
     # Get the set of entries with an encoding value we can parse
-    tab_data_files = filetable.filter(pl.col("encoding").is_in(PARSIBLE_ENCODINGS))
+    tab_data_files = filetable.filter(
+        pl.col("encoding").is_in(PARSIBLE_ENCODINGS) | 
+        pl.col("name").str.ends_with(".csv")
+    )
 
     # Get the set of entries that look like they are data dictionaries
     data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
