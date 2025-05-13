@@ -44,7 +44,7 @@ def main():
 def get_essdive_metadata(path, outpath):
     """Given a file containing one DOI per line, return metadata from ESS-DIVE.
     Parameters:
-    path: Path to a file containing DOIs, without the doi prefix, one per line.
+    path: Path to a file containing DOIs, with or without the doi prefix, one per line.
     outpath: Directory where output files should be written.
     """
 
