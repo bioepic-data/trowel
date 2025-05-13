@@ -325,9 +325,15 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                         data_names = parse_data_dictionary(response_text)
                     else:  # CSV data file
                         # This is a data file, so we just want the header
-                        response_text = response.iter_lines(
-                            decode_unicode=True
-                        ).__next__()
+                        try:
+                            # Try with decode_unicode=True first
+                            response_text = response.iter_lines(
+                                decode_unicode=True
+                            ).__next__()
+                        except (UnicodeDecodeError, TypeError):
+                            # If that fails, get the bytes and decode manually
+                            response_bytes = response.iter_lines(decode_unicode=False).__next__()
+                            response_text = response_bytes.decode('utf-8', errors='replace')
                         data_names = parse_header(response_text)
 
                     # Update column frequencies
