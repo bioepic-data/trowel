@@ -2,7 +2,7 @@
 
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
-from io import StringIO
+from io import StringIO, BytesIO
 import sys
 from typing import Tuple
 import csv
@@ -285,12 +285,13 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     # Create dictionaries for tracking errors
     errors = {
         "failed_urls": [],
-        "response_errors": []
+        "response_errors": [],
+        "encoding_errors": []
     }
 
     # Get the set of entries with an encoding value we can parse
     tab_data_files = filetable.filter(
-        pl.col("encoding").is_in(PARSIBLE_ENCODINGS) | 
+        pl.col("encoding").is_in(PARSIBLE_ENCODINGS) |
         pl.col("name").str.ends_with(".csv")
     )
 
@@ -319,44 +320,70 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 )
                 status_code = response.status_code
                 if status_code == 200:
-                    if i == 1:  # Data dictionary
-                        # This is a data dictionary, so we want the whole thing
-                        response_text = response.text
-                        data_names = parse_data_dictionary(response_text)
-                    else:  # CSV data file
-                        # This is a data file, so we just want the header
-                        try:
-                            # Try with decode_unicode=True first
-                            response_text = response.iter_lines(
-                                decode_unicode=True
-                            ).__next__()
-                        except (UnicodeDecodeError, TypeError):
-                            # If that fails, get the bytes and decode manually
-                            response_bytes = response.iter_lines(decode_unicode=False).__next__()
-                            response_text = response_bytes.decode('utf-8', errors='replace')
-                        data_names = parse_header(response_text)
+                    try:
+                        if i == 1:  # Data dictionary
+                            # This is a data dictionary, so we want the whole thing
+                            content = response.content
+                            # Try to decode the content as UTF-8
+                            try:
+                                response_text = content.decode('utf-8')
+                            except UnicodeDecodeError:
+                                # If UTF-8 fails, try another common encoding
+                                try:
+                                    response_text = content.decode('latin-1')
+                                except UnicodeDecodeError:
+                                    # Last resort, ignore errors
+                                    response_text = content.decode(
+                                        'utf-8', errors='ignore')
+                                    logger.warning(
+                                        f"Had to ignore encoding errors for {url}")
 
-                    # Update column frequencies
-                    new_columns = False
-                    for name in data_names:
-                        if name in column_frequencies:
-                            column_frequencies[name] += 1
-                        else:
-                            column_frequencies[name] = 1
-                            new_columns = True
+                            data_names = parse_data_dictionary(response_text)
+                        else:  # CSV data file
+                            # This is a data file, so we just want the header
+                            # Get the first line as bytes
+                            for line in response.iter_lines():
+                                try:
+                                    # Try to decode as UTF-8 first
+                                    header_line = line.decode('utf-8')
+                                except UnicodeDecodeError:
+                                    # If that fails, try Latin-1
+                                    try:
+                                        header_line = line.decode('latin-1')
+                                    except UnicodeDecodeError:
+                                        # Last resort, ignore errors
+                                        header_line = line.decode(
+                                            'utf-8', errors='ignore')
+                                        logger.warning(
+                                            f"Had to ignore encoding errors for {url}")
 
-                    # If we found new columns, append them to the file
-                    if new_columns:
-                        with open(column_names_path, "a") as f:
-                            for column, freq in column_frequencies.items():
-                                if freq == 1:  # Only write new columns
-                                    f.write(f"{column}\t{freq}\n")
+                                data_names = parse_header(header_line)
+                                break  # We only need the first line
+
+                        # Update column frequencies
+                        new_columns = False
+                        for name in data_names:
+                            if name in column_frequencies:
+                                column_frequencies[name] += 1
+                            else:
+                                column_frequencies[name] = 1
+                                new_columns = True
+
+                        # If we found new columns, append them to the file
+                        if new_columns:
+                            with open(column_names_path, "a") as f:
+                                for column, freq in column_frequencies.items():
+                                    if freq == 1:  # Only write new columns
+                                        f.write(f"{column}\t{freq}\n")
+                    except Exception as e:
+                        errors["encoding_errors"].append(f"{url} ({str(e)})")
+                        logger.debug(f"Encoding error for {url}: {str(e)}")
+                        continue
                 else:
                     errors["response_errors"].append(
                         f"{url} (status code: {response.status_code})")
                     continue
             except Exception as e:
-                # Yeah I don't really like this much but so it goes
                 errors["failed_urls"].append(f"{url} ({str(e)})")
                 continue
 
@@ -385,6 +412,14 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
             logger.error(f"  {url}")
         if len(errors["failed_urls"]) > 5:
             logger.error(f"  ...and {len(errors['failed_urls']) - 5} more")
+
+    if errors["encoding_errors"]:
+        logger.error(
+            f"Encoding errors for {len(errors['encoding_errors'])} URLs")
+        for url in errors["encoding_errors"][:5]:  # Log first few errors
+            logger.error(f"  {url}")
+        if len(errors["encoding_errors"]) > 5:
+            logger.error(f"  ...and {len(errors['encoding_errors']) - 5} more")
 
     return column_names_path
 
