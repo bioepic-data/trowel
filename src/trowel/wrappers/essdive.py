@@ -289,24 +289,24 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     }
 
     # Get the set of entries with an encoding value we can parse
-    csv_files = filetable.filter(pl.col("encoding") == "text/csv")
+    tab_data_files = filetable.filter(pl.col("encoding").is_in(PARSIBLE_ENCODINGS))
 
     # Get the set of entries that look like they are data dictionaries
     data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
 
     # Remove data dict files from the csv files
-    csv_files = csv_files.join(data_dict_files, on="url", how="anti")
+    tab_data_files = tab_data_files.join(data_dict_files, on="url", how="anti")
 
     # Initialize the output file
     with open(column_names_path, "w") as f:
         f.write("column_name\tfrequency\n")
 
     # Process files with a progress bar
-    file_count = len(csv_files) + len(data_dict_files)
+    file_count = len(tab_data_files) + len(data_dict_files)
     logging.info(f"Processing {file_count} files...")
 
     # Now retrieve the column names, then the data dictionaries
-    for i, fileset_name in enumerate([("data files", csv_files), ("data dictionaries", data_dict_files)]):
+    for i, fileset_name in enumerate([("data files", tab_data_files), ("data dictionaries", data_dict_files)]):
         name, fileset = fileset_name
 
         for url in tqdm(fileset["url"], desc=f"Processing {name}", unit="file"):
