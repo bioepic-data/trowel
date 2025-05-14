@@ -335,8 +335,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     Takes the name/path of the table, as produced by get_metadata,
     as input.
 
-    Column names are streamed to an output file as they are collected.
-    Also processes XML files to extract keywords.
+    Column names and keywords are streamed to an output file as they are collected.
 
     Args:
         filetable_path: Path to the filetable created by get_metadata
@@ -345,11 +344,10 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     Returns:
         Path to the column names output file
     """
-    # Define the output file paths
+    # Define the output file path
     column_names_path = f"{outpath}/column_names.txt"
-    keywords_path = f"{outpath}/keywords.txt"
 
-    # Initialize the column frequency dictionary for tracking
+    # Initialize the column and keyword frequency dictionaries for tracking
     column_frequencies = {}
     keyword_frequencies = {}
 
@@ -385,12 +383,9 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     tab_data_files = tab_data_files.join(data_dict_files, on="url", how="anti")
     tab_data_files = tab_data_files.join(xml_files, on="url", how="anti")
 
-    # Initialize the output files
+    # Initialize the output file
     with open(column_names_path, "w") as f:
-        f.write("column_name\tfrequency\n")
-    
-    with open(keywords_path, "w") as f:
-        f.write("keyword\tfrequency\n")
+        f.write("name\tfrequency\tsource\n")
 
     # Process files
     file_count = len(tab_data_files) + len(data_dict_files) + len(xml_files)
@@ -434,10 +429,10 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                         
                         # If we found new keywords, append them to the file
                         if new_keywords:
-                            with open(keywords_path, "a") as f:
+                            with open(column_names_path, "a") as f:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
-                                        f.write(f"{keyword}\t{freq}\n")
+                                        f.write(f"{keyword}\t{freq}\tkeyword\n")
                     
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -523,7 +518,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                             with open(column_names_path, "a") as f:
                                 for column, freq in column_frequencies.items():
                                     if freq == 1:  # Only write new columns
-                                        f.write(f"{column}\t{freq}\n")
+                                        f.write(f"{column}\t{freq}\tcolumn\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -538,23 +533,24 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 errors["failed_urls"].append(f"{url} ({str(e)})")
                 continue
 
-    # After processing all files, update the files with final frequencies
-    # This overwrites the files with the complete, sorted results
-    sorted_columns = sorted(column_frequencies.items(),
-                          key=lambda item: item[1], reverse=True)
+    # After processing all files, update the file with final frequencies
+    # This overwrites the file with the complete, sorted results - combining both columns and keywords
+    # Merge the two dictionaries with a source identifier
+    all_terms = {}
+    for column, freq in column_frequencies.items():
+        all_terms[f"{column}|column"] = freq
+    
+    for keyword, freq in keyword_frequencies.items():
+        all_terms[f"{keyword}|keyword"] = freq
+    
+    # Sort by frequency
+    sorted_terms = sorted(all_terms.items(), key=lambda item: item[1], reverse=True)
     
     with open(column_names_path, "w") as f:
-        f.write("column_name\tfrequency\n")
-        for column, frequency in sorted_columns:
-            f.write(f"{column}\t{frequency}\n")
-    
-    sorted_keywords = sorted(keyword_frequencies.items(),
-                           key=lambda item: item[1], reverse=True)
-    
-    with open(keywords_path, "w") as f:
-        f.write("keyword\tfrequency\n")
-        for keyword, frequency in sorted_keywords:
-            f.write(f"{keyword}\t{frequency}\n")
+        f.write("name\tfrequency\tsource\n")
+        for term_with_source, frequency in sorted_terms:
+            term, source = term_with_source.split('|')
+            f.write(f"{term}\t{frequency}\t{source}\n")
             
     # Log any errors that occurred during processing
     if errors["response_errors"]:
@@ -589,8 +585,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
             logger.error(
                 f"  ...and {len(errors['unsupported_filetype']) - 5} more")
 
-    # Return both paths for convenience
-    return column_names_path, keywords_path
+    return column_names_path
 
 
 def normalize_variables(variables: list) -> list:
@@ -637,28 +632,28 @@ def parse_data_dictionary(dd: str) -> list:
 
 def parse_eml_keywords(content: str) -> List[str]:
     """Parse keywords from an Ecological Metadata Language (EML) XML file.
-    
+
     Args:
         content: String containing the XML content
-        
+
     Returns:
         List of keywords extracted from the XML
     """
     keywords = []
-    
+
     try:
         # Parse the XML content
         # The namespace is important for finding elements correctly
         root = ET.fromstring(content)
-        
+
         # Find all keyword elements, regardless of their namespace path
         # This handles different EML structures and namespaces
         for keyword_elem in root.findall(".//*{https://eml.ecoinformatics.org/eml-2.2.0}keyword") or \
-                            root.findall(".//*keyword") or \
-                            root.findall(".//*{*}keyword"):
+                root.findall(".//*keyword") or \
+                root.findall(".//*{*}keyword"):
             if keyword_elem.text and keyword_elem.text.strip():
                 keywords.append(keyword_elem.text.strip().lower())
     except Exception as e:
         logger.debug(f"Error parsing EML XML: {str(e)}")
-    
+
     return keywords

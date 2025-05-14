@@ -104,10 +104,9 @@ def get_essdive_column_names(path, outpath):
         logging.error(f"The specified output directory '{outpath}' does not exist.")
         sys.exit()
 
-    column_names_path, keywords_path = get_column_names(filetable_path, outpath)
+    column_names_path = get_column_names(filetable_path, outpath)
     
-    logging.info(f"Column names written to {column_names_path}")
-    logging.info(f"Keywords written to {keywords_path}")
+    logging.info(f"Column names and keywords written to {column_names_path}")
 
 
 if __name__ == "__main__":
