@@ -11,6 +11,7 @@ import csv
 import logging
 import polars as pl
 import requests
+import xml.etree.ElementTree as ET
 from tqdm import tqdm
 import openpyxl
 import xlrd
@@ -28,6 +29,7 @@ USER_HEADERS = {
 PARSIBLE_ENCODINGS = ["text/csv",
                       "text/plain",
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                      "https://eml.ecoinformatics.org/eml-2.2.0",
                       ]
 
 PARSIBLE_EXTENSIONS = [
@@ -36,6 +38,7 @@ PARSIBLE_EXTENSIONS = [
     ".tsv",
     ".xlsx",
     ".xls",
+    ".xml",
 ]
 
 logger = logging.getLogger(__name__)
@@ -284,7 +287,8 @@ def parse_excel_header(content: bytes, filename: str) -> List[str]:
     try:
         if file_ext == '.xlsx':
             # Use openpyxl for .xlsx files
-            wb = openpyxl.load_workbook(temp_path, read_only=True, data_only=True)
+            wb = openpyxl.load_workbook(
+                temp_path, read_only=True, data_only=True)
 
             # Get the first worksheet
             ws = wb.active
@@ -332,6 +336,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     as input.
 
     Column names are streamed to an output file as they are collected.
+    Also processes XML files to extract keywords.
 
     Args:
         filetable_path: Path to the filetable created by get_metadata
@@ -340,11 +345,13 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     Returns:
         Path to the column names output file
     """
-    # Define the output file path
+    # Define the output file paths
     column_names_path = f"{outpath}/column_names.txt"
+    keywords_path = f"{outpath}/keywords.txt"
 
     # Initialize the column frequency dictionary for tracking
     column_frequencies = {}
+    keyword_frequencies = {}
 
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
@@ -365,19 +372,84 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
         ~pl.col("name").str.to_lowercase().str.starts_with("readme")
     )
 
+    # Get the set of entries that are XML files (could be EML)
+    xml_files = filetable.filter(
+        (pl.col("name").str.to_lowercase().str.ends_with(".xml")) |
+        (pl.col("encoding").str.contains("xml", ignore_case=True))
+    )
+
     # Get the set of entries that look like they are data dictionaries
     data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
 
-    # Remove data dict files from the tabular files
+    # Remove data dict files and XML files from the tabular files to avoid duplication
     tab_data_files = tab_data_files.join(data_dict_files, on="url", how="anti")
+    tab_data_files = tab_data_files.join(xml_files, on="url", how="anti")
 
-    # Initialize the output file
+    # Initialize the output files
     with open(column_names_path, "w") as f:
         f.write("column_name\tfrequency\n")
+    
+    with open(keywords_path, "w") as f:
+        f.write("keyword\tfrequency\n")
 
     # Process files
-    file_count = len(tab_data_files) + len(data_dict_files)
+    file_count = len(tab_data_files) + len(data_dict_files) + len(xml_files)
     logging.info(f"Processing {file_count} files...")
+
+    # First process XML files for keywords
+    if len(xml_files) > 0:
+        for idx, row in enumerate(tqdm(xml_files.iter_rows(named=True), desc="Processing XML files", unit="file", total=len(xml_files))):
+            url = row["url"]
+            filename = row["name"]
+            
+            try:
+                response = requests.get(url, headers=USER_HEADERS, verify=True)
+                status_code = response.status_code
+                
+                if status_code == 200:
+                    try:
+                        # Try to decode the content as UTF-8
+                        try:
+                            response_text = response.content.decode('utf-8')
+                        except UnicodeDecodeError:
+                            # If UTF-8 fails, try another common encoding
+                            try:
+                                response_text = response.content.decode('latin-1')
+                            except UnicodeDecodeError:
+                                # Last resort, ignore errors
+                                response_text = response.content.decode('utf-8', errors='ignore')
+                                logger.warning(f"Had to ignore encoding errors for {url}")
+                        
+                        # Extract keywords from the XML
+                        keywords = parse_eml_keywords(response_text)
+                        
+                        # Update keyword frequencies
+                        new_keywords = False
+                        for keyword in keywords:
+                            if keyword in keyword_frequencies:
+                                keyword_frequencies[keyword] += 1
+                            else:
+                                keyword_frequencies[keyword] = 1
+                                new_keywords = True
+                        
+                        # If we found new keywords, append them to the file
+                        if new_keywords:
+                            with open(keywords_path, "a") as f:
+                                for keyword, freq in keyword_frequencies.items():
+                                    if freq == 1:  # Only write new keywords
+                                        f.write(f"{keyword}\t{freq}\n")
+                    
+                    except Exception as e:
+                        errors["encoding_errors"].append(f"{url} ({str(e)})")
+                        logger.debug(f"Error processing XML file {filename}: {str(e)}")
+                        continue
+                else:
+                    errors["response_errors"].append(f"{url} (status code: {response.status_code})")
+                    continue
+            
+            except Exception as e:
+                errors["failed_urls"].append(f"{url} ({str(e)})")
+                continue
 
     # Now retrieve the column names, then the data dictionaries
     for i, fileset_name in enumerate([("data files", tab_data_files), ("data dictionaries", data_dict_files)]):
@@ -466,16 +538,24 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 errors["failed_urls"].append(f"{url} ({str(e)})")
                 continue
 
-    # After processing all files, update the file with final frequencies
-    # This overwrites the file with the complete, sorted results
+    # After processing all files, update the files with final frequencies
+    # This overwrites the files with the complete, sorted results
     sorted_columns = sorted(column_frequencies.items(),
-                            key=lambda item: item[1], reverse=True)
-
+                          key=lambda item: item[1], reverse=True)
+    
     with open(column_names_path, "w") as f:
         f.write("column_name\tfrequency\n")
         for column, frequency in sorted_columns:
             f.write(f"{column}\t{frequency}\n")
-
+    
+    sorted_keywords = sorted(keyword_frequencies.items(),
+                           key=lambda item: item[1], reverse=True)
+    
+    with open(keywords_path, "w") as f:
+        f.write("keyword\tfrequency\n")
+        for keyword, frequency in sorted_keywords:
+            f.write(f"{keyword}\t{frequency}\n")
+            
     # Log any errors that occurred during processing
     if errors["response_errors"]:
         logger.error(
@@ -509,7 +589,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
             logger.error(
                 f"  ...and {len(errors['unsupported_filetype']) - 5} more")
 
-    return column_names_path
+    # Return both paths for convenience
+    return column_names_path, keywords_path
 
 
 def normalize_variables(variables: list) -> list:
@@ -552,3 +633,32 @@ def parse_data_dictionary(dd: str) -> list:
         if name not in ["", "Column_or_Row_Name"]:
             data_names.append(name.lower().replace("_", " ").strip())
     return data_names
+
+
+def parse_eml_keywords(content: str) -> List[str]:
+    """Parse keywords from an Ecological Metadata Language (EML) XML file.
+    
+    Args:
+        content: String containing the XML content
+        
+    Returns:
+        List of keywords extracted from the XML
+    """
+    keywords = []
+    
+    try:
+        # Parse the XML content
+        # The namespace is important for finding elements correctly
+        root = ET.fromstring(content)
+        
+        # Find all keyword elements, regardless of their namespace path
+        # This handles different EML structures and namespaces
+        for keyword_elem in root.findall(".//*{https://eml.ecoinformatics.org/eml-2.2.0}keyword") or \
+                            root.findall(".//*keyword") or \
+                            root.findall(".//*{*}keyword"):
+            if keyword_elem.text and keyword_elem.text.strip():
+                keywords.append(keyword_elem.text.strip().lower())
+    except Exception as e:
+        logger.debug(f"Error parsing EML XML: {str(e)}")
+    
+    return keywords

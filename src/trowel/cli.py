@@ -85,7 +85,7 @@ def get_essdive_metadata(path, outpath):
 @path_option
 @outpath_option
 def get_essdive_column_names(path, outpath):
-    """Get all column names from all data files.
+    """Get all column names from all data files and keywords from XML files.
     Files are those with identifiers retrieved by the get_essdive_metadata function.
     By default, this is filetable.txt."""
 
@@ -97,18 +97,17 @@ def get_essdive_column_names(path, outpath):
 
     if not os.path.exists(filetable_path):
         logging.error(f"The filetable file {filetable_path} does not exist.")
-        logging.error(
-            "You must run get_essdive_metadata first to get the filetable.")
+        logging.error("You must run get_essdive_metadata first to get the filetable.")
         sys.exit()
 
     if not os.path.exists(outpath):
-        logging.error(
-            f"The specified output directory '{outpath}' does not exist.")
+        logging.error(f"The specified output directory '{outpath}' does not exist.")
         sys.exit()
 
-    column_names_path = get_column_names(filetable_path, outpath)
-
+    column_names_path, keywords_path = get_column_names(filetable_path, outpath)
+    
     logging.info(f"Column names written to {column_names_path}")
+    logging.info(f"Keywords written to {keywords_path}")
 
 
 if __name__ == "__main__":
