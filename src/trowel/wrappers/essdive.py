@@ -267,7 +267,7 @@ def get_metadata(
 
 def parse_excel_header(content: bytes, filename: str) -> List[str]:
     """Parse header from an Excel file.
-    Also normalizes column names.
+    Also normalizes column names and filters out excessively long names (>70 chars).
 
     Args:
         content: The Excel file content as bytes
@@ -295,9 +295,9 @@ def parse_excel_header(content: bytes, filename: str) -> List[str]:
 
             # Read the first row (header)
             for cell in next(ws.rows):
-                if cell.value:
+                if cell.value and isinstance(cell.value, (str, int, float)):
                     value = str(cell.value).strip()
-                    if value:
+                    if value and len(value) <= 70:  # Skip empty names and names > 70 chars
                         header_names.append(value.lower().replace("_", " "))
         elif file_ext == '.xls':
             # Use xlrd for .xls files
@@ -311,7 +311,7 @@ def parse_excel_header(content: bytes, filename: str) -> List[str]:
                 value = ws.cell_value(0, col)
                 if value:
                     value = str(value).strip()
-                    if value:
+                    if value and len(value) <= 70:  # Skip empty names and names > 70 chars
                         header_names.append(value.lower().replace("_", " "))
     except Exception as e:
         logger.debug(f"Error parsing Excel file {filename}: {str(e)}")
@@ -400,7 +400,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 response = requests.get(url, headers=USER_HEADERS, verify=True)
                 status_code = response.status_code
 
-                if status_code == 200:
+                if (status_code == 200):
                     try:
                         # Try to decode the content as UTF-8
                         try:
@@ -610,49 +610,87 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
 
 def normalize_variables(variables: list) -> list:
-    """Normalize variables from ESS-DIVE."""
+    """Normalize variables from ESS-DIVE.
+    
+    This function:
+    1. Splits hierarchical terms (those with '>')
+    2. Removes leading punctuation and special characters
+    3. Converts to lowercase
+    4. Replaces underscores with spaces
+    5. Strips whitespace
+    6. Sorts the list
+    """
     normalized = []
     for var in variables:
+        if not var:  # Skip empty strings
+            continue
+            
+        # Convert to string if it's not already
+        var = str(var)
+        
+        # Remove byte order mark (BOM) and other invisible characters
+        var = var.replace('\ufeff', '')  # Remove BOM
+        var = var.replace('\u200b', '')  # Remove zero-width space
+        
         if ">" in var:
             # This is a hierarchy but we just want all terms
-            vars = var.split(">")
-            for v in vars:
-                if v in normalized:
+            vars_split = var.split(">")
+            for v in vars_split:
+                if not v.strip():  # Skip empty strings after splitting
                     continue
-                else:
-                    normalized.append(v.lower().replace("_", " ").strip())
+                v = v.lower().replace("_", " ").strip()
+                
+                # Remove leading punctuation and special characters
+                import string
+                while v and (v[0] in string.punctuation or not v[0].isalnum()):
+                    v = v[1:]
+                
+                if v and v not in normalized:
+                    normalized.append(v)
         else:
-            normalized.append(var.lower().replace("_", " "))
+            var = var.lower().replace("_", " ").strip()
+            # Remove leading punctuation and special characters
+            import string
+            while var and (var[0] in string.punctuation or not var[0].isalnum()):
+                var = var[1:]
+                var = var[1:]
+            
+            if var and var not in normalized:
+                normalized.append(var)
+    
     normalized.sort()
     return normalized
 
 
 def parse_header(header: str) -> list:
     """Parse header from a data file.
-    Also normalizes."""
+    Also normalizes and filters out excessively long column names (>70 chars)."""
     header_names = []
     reader = csv.reader(StringIO(header))
     for row in reader:
         for name in row:
-            if name != "":
+            if name != "" and len(name) <= 70:  # Skip empty names and names > 70 chars
                 header_names.append(name.lower().replace("_", " ").strip())
     return header_names
 
 
 def parse_data_dictionary(dd: str) -> list:
     """Parse a data dictionary.
-    Also normalizes."""
+    Also normalizes and filters out excessively long column names (>70 chars)."""
     data_names = []
     reader = csv.reader(StringIO(dd))
     for row in reader:
+        if not row:  # Skip empty rows
+            continue
         name = row[0]
-        if name not in ["", "Column_or_Row_Name"]:
+        if name not in ["", "Column_or_Row_Name"] and len(name) <= 70:  # Skip headers and long names
             data_names.append(name.lower().replace("_", " ").strip())
     return data_names
 
 
 def parse_eml_keywords(content: str) -> List[str]:
     """Parse keywords from an Ecological Metadata Language (EML) XML file.
+    Also filters out excessively long keywords (>70 chars).
 
     Args:
         content: String containing the XML content
@@ -673,7 +711,9 @@ def parse_eml_keywords(content: str) -> List[str]:
                 root.findall(".//*keyword") or \
                 root.findall(".//*{*}keyword"):
             if keyword_elem.text and keyword_elem.text.strip():
-                keywords.append(keyword_elem.text.strip().lower())
+                keyword = keyword_elem.text.strip().lower()
+                if len(keyword) <= 70:  # Skip keywords > 70 chars
+                    keywords.append(keyword)
     except Exception as e:
         logger.debug(f"Error parsing EML XML: {str(e)}")
 
