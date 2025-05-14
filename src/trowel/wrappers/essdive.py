@@ -4,12 +4,16 @@
 
 from io import StringIO, BytesIO
 import sys
-from typing import Tuple
+import os
+import tempfile
+from typing import Tuple, List
 import csv
 import logging
 import polars as pl
 import requests
 from tqdm import tqdm
+import openpyxl
+import xlrd
 
 BASE_URL = "https://api.ess-dive.lbl.gov"
 
@@ -258,6 +262,70 @@ def get_metadata(
     return results_path, frequencies_path, filetable_path
 
 
+def parse_excel_header(content: bytes, filename: str) -> List[str]:
+    """Parse header from an Excel file.
+    Also normalizes column names.
+
+    Args:
+        content: The Excel file content as bytes
+        filename: Name of the file (used to determine if it's .xls or .xlsx)
+
+    Returns:
+        List of normalized column names
+    """
+    header_names = []
+    file_ext = os.path.splitext(filename.lower())[1]
+
+    # Create a temporary file to save the Excel content
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+        temp_file.write(content)
+        temp_path = temp_file.name
+
+    try:
+        if file_ext == '.xlsx':
+            # Use openpyxl for .xlsx files
+            wb = openpyxl.load_workbook(temp_path, read_only=True, data_only=True)
+
+            # Get the first worksheet
+            ws = wb.active
+
+            # Read the first row (header)
+            for cell in next(ws.rows):
+                if cell.value:
+                    value = str(cell.value).strip()
+                    if value:
+                        header_names.append(value.lower().replace("_", " "))
+        elif file_ext == '.xls':
+            # Use xlrd for .xls files
+            wb = xlrd.open_workbook(temp_path)
+
+            # Get the first worksheet
+            ws = wb.sheet_by_index(0)
+
+            # Read the first row (header)
+            for col in range(ws.ncols):
+                value = ws.cell_value(0, col)
+                if value:
+                    value = str(value).strip()
+                    if value:
+                        header_names.append(value.lower().replace("_", " "))
+    except Exception as e:
+        logger.debug(f"Error parsing Excel file {filename}: {str(e)}")
+    finally:
+        # Clean up the temporary file
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+
+    return header_names
+
+
+def get_file_extension(filename: str) -> str:
+    """Get the lowercase extension of a file."""
+    return os.path.splitext(filename.lower())[1]
+
+
 def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     """Get dataset column names from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
@@ -272,20 +340,6 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     Returns:
         Path to the column names output file
     """
-
-    # TODO: parse FLMD files
-    # The FLMD serve as a guide to the other files in a package,
-    # but aren't as important to tracking column names themselves.
-
-    # TODO: count frequencies per package, not per file,
-    # since some packages have multiple files with the same column names
-
-    # TODO: expand set of accepted encodings
-
-    # TODO: in normalization, try to separate units from names
-
-    # TODO: parse EML XML
-
     # Define the output file path
     column_names_path = f"{outpath}/column_names.txt"
 
@@ -299,7 +353,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     errors = {
         "failed_urls": [],
         "response_errors": [],
-        "encoding_errors": []
+        "encoding_errors": [],
+        "unsupported_filetype": []
     }
 
     # Get the set of entries with an encoding value we can parse
@@ -313,14 +368,14 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     # Get the set of entries that look like they are data dictionaries
     data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
 
-    # Remove data dict files from the csv files
+    # Remove data dict files from the tabular files
     tab_data_files = tab_data_files.join(data_dict_files, on="url", how="anti")
 
     # Initialize the output file
     with open(column_names_path, "w") as f:
         f.write("column_name\tfrequency\n")
 
-    # Process files with a progress bar
+    # Process files
     file_count = len(tab_data_files) + len(data_dict_files)
     logging.info(f"Processing {file_count} files...")
 
@@ -328,17 +383,26 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     for i, fileset_name in enumerate([("data files", tab_data_files), ("data dictionaries", data_dict_files)]):
         name, fileset = fileset_name
 
-        for url in tqdm(fileset["url"], desc=f"Processing {name}", unit="file"):
+        for idx, row in enumerate(tqdm(fileset.iter_rows(named=True), desc=f"Processing {name}", unit="file", total=len(fileset))):
+            url = row["url"]
+            filename = row["name"]
+            file_ext = get_file_extension(filename)
+
             try:
                 response = requests.get(
-                    url, headers=USER_HEADERS, verify=True, stream=True
+                    url, headers=USER_HEADERS, verify=True, stream=True if file_ext not in [".xls", ".xlsx"] else False
                 )
                 status_code = response.status_code
+
                 if status_code == 200:
                     try:
-                        if i == 1:  # Data dictionary
-                            # This is a data dictionary, so we want the whole thing
+                        data_names = []
+
+                        # Process the file based on its type
+                        if i == 1 or file_ext == ".csv" or file_ext == ".txt" or file_ext == ".tsv":
+                            # Data dictionary or CSV-like file
                             content = response.content
+
                             # Try to decode the content as UTF-8
                             try:
                                 response_text = content.decode('utf-8')
@@ -353,27 +417,25 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                     logger.warning(
                                         f"Had to ignore encoding errors for {url}")
 
-                            data_names = parse_data_dictionary(response_text)
-                        else:  # CSV data file
-                            # This is a data file, so we just want the header
-                            # Get the first line as bytes
-                            for line in response.iter_lines():
-                                try:
-                                    # Try to decode as UTF-8 first
-                                    header_line = line.decode('utf-8')
-                                except UnicodeDecodeError:
-                                    # If that fails, try Latin-1
-                                    try:
-                                        header_line = line.decode('latin-1')
-                                    except UnicodeDecodeError:
-                                        # Last resort, ignore errors
-                                        header_line = line.decode(
-                                            'utf-8', errors='ignore')
-                                        logger.warning(
-                                            f"Had to ignore encoding errors for {url}")
+                            if i == 1:  # Data dictionary
+                                data_names = parse_data_dictionary(
+                                    response_text)
+                            else:  # CSV file
+                                # For CSV, just get the header
+                                for line in response_text.splitlines():
+                                    if line.strip():  # Skip empty lines
+                                        data_names = parse_header(line)
+                                        break  # We only need the first line
 
-                                data_names = parse_header(header_line)
-                                break  # We only need the first line
+                        elif file_ext == ".xlsx" or file_ext == ".xls":
+                            # Excel file
+                            content = response.content
+                            data_names = parse_excel_header(content, filename)
+
+                        else:
+                            errors["unsupported_filetype"].append(
+                                f"{url} (filetype: {file_ext})")
+                            continue
 
                         # Update column frequencies
                         new_columns = False
@@ -390,6 +452,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                 for column, freq in column_frequencies.items():
                                     if freq == 1:  # Only write new columns
                                         f.write(f"{column}\t{freq}\n")
+
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
                         logger.debug(f"Encoding error for {url}: {str(e)}")
@@ -398,6 +461,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                     errors["response_errors"].append(
                         f"{url} (status code: {response.status_code})")
                     continue
+
             except Exception as e:
                 errors["failed_urls"].append(f"{url} ({str(e)})")
                 continue
@@ -435,6 +499,15 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
             logger.error(f"  {url}")
         if len(errors["encoding_errors"]) > 5:
             logger.error(f"  ...and {len(errors['encoding_errors']) - 5} more")
+
+    if errors["unsupported_filetype"]:
+        logger.error(
+            f"Unsupported file types for {len(errors['unsupported_filetype'])} URLs")
+        for url in errors["unsupported_filetype"][:5]:  # Log first few errors
+            logger.error(f"  {url}")
+        if len(errors["unsupported_filetype"]) > 5:
+            logger.error(
+                f"  ...and {len(errors['unsupported_filetype']) - 5} more")
 
     return column_names_path
 
