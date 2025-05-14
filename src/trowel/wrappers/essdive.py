@@ -443,7 +443,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
                                         # Keywords typically don't have units, so same value for both columns
-                                        f.write(f"{keyword}\t{freq}\tkeyword\t{keyword}\t\n")
+                                        f.write(
+                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -532,7 +533,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                 for column, freq in column_frequencies.items():
                                     if freq == 1:  # Only write new columns
                                         var_name, unit = extract_units(column)
-                                        f.write(f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
+                                        f.write(
+                                            f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -618,7 +620,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
 def normalize_variables(variables: list) -> list:
     """Normalize variables from ESS-DIVE.
-    
+
     This function:
     1. Splits hierarchical terms (those with '>')
     2. Removes Unicode special characters (BOM, zero-width spaces, etc.)
@@ -632,13 +634,13 @@ def normalize_variables(variables: list) -> list:
     for var in variables:
         if not var:  # Skip empty strings
             continue
-            
+
         # Convert to string if it's not already
         var = str(var)
-        
+
         # Clean Unicode special characters
         var = clean_unicode_chars(var)
-        
+
         if ">" in var:
             # This is a hierarchy but we just want all terms
             vars_split = var.split(">")
@@ -646,21 +648,23 @@ def normalize_variables(variables: list) -> list:
                 if not v.strip():  # Skip empty strings after splitting
                     continue
                 v = v.lower().replace("_", " ").strip()
-                
+
                 # Clean leading and trailing punctuation while preserving parentheses and brackets
                 v = clean_punctuation(v, preserve_brackets=True)
-                
-                if v and v not in normalized and len(v) <= 70:  # Also enforce length limit
+
+                # Also enforce length limit
+                if v and v not in normalized and len(v) <= 70:
                     normalized.append(v)
         else:
             var = var.lower().replace("_", " ").strip()
-            
+
             # Clean leading and trailing punctuation while preserving parentheses and brackets
             var = clean_punctuation(var, preserve_brackets=True)
-            
-            if var and var not in normalized and len(var) <= 70:  # Also enforce length limit
+
+            # Also enforce length limit
+            if var and var not in normalized and len(var) <= 70:
                 normalized.append(var)
-    
+
     normalized.sort()
     return normalized
 
@@ -669,20 +673,22 @@ def parse_header(header: str) -> list:
     """Parse header from a data file.
     Also normalizes and filters out excessively long column names (>70 chars)."""
     header_names = []
-    
+
     # Clean Unicode special characters first
     header = clean_unicode_chars(header)
-    
+
     reader = csv.reader(StringIO(header))
     for row in reader:
         for name in row:
-            if name != "" and len(name) <= 70:  # Skip empty names and names > 70 chars
-                clean_name = clean_unicode_chars(name.lower().replace("_", " ").strip())
-                
+            # Skip empty names and names > 70 chars
+            if name != "" and len(name) <= 70:
+                clean_name = clean_unicode_chars(
+                    name.lower().replace("_", " ").strip())
+
                 # Remove leading punctuation and non-alphanumeric characters
                 while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
                     clean_name = clean_name[1:]
-                
+
                 if clean_name:  # Only add if not empty after cleaning
                     header_names.append(clean_name)
     return header_names
@@ -692,22 +698,24 @@ def parse_data_dictionary(dd: str) -> list:
     """Parse a data dictionary.
     Also normalizes and filters out excessively long column names (>70 chars)."""
     data_names = []
-    
+
     # Clean Unicode special characters first
     dd = clean_unicode_chars(dd)
-    
+
     reader = csv.reader(StringIO(dd))
     for row in reader:
         if not row:  # Skip empty rows
             continue
         name = row[0]
-        if name not in ["", "Column_or_Row_Name"] and len(name) <= 70:  # Skip headers and long names
-            clean_name = clean_unicode_chars(name.lower().replace("_", " ").strip())
-            
+        # Skip headers and long names
+        if name not in ["", "Column_or_Row_Name"] and len(name) <= 70:
+            clean_name = clean_unicode_chars(
+                name.lower().replace("_", " ").strip())
+
             # Remove leading punctuation and non-alphanumeric characters
             while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
                 clean_name = clean_name[1:]
-            
+
             if clean_name:  # Only add if not empty after cleaning
                 data_names.append(clean_name)
     return data_names
