@@ -17,7 +17,7 @@ from tqdm import tqdm
 import openpyxl
 import xlrd
 
-from trowel.utils.string_utils import clean_unicode_chars
+from trowel.utils.string_utils import clean_unicode_chars, extract_units
 
 BASE_URL = "https://api.ess-dive.lbl.gov"
 
@@ -389,7 +389,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
     # Initialize the output file
     with open(column_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\n")
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
 
     # Process files
     file_count = len(tab_data_files) + len(data_dict_files) + len(xml_files)
@@ -442,8 +442,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                             with open(column_names_path, "a") as f:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
-                                        f.write(
-                                            f"{keyword}\t{freq}\tkeyword\n")
+                                        # Keywords typically don't have units, so same value for both columns
+                                        f.write(f"{keyword}\t{freq}\tkeyword\t{keyword}\t\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -531,7 +531,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                             with open(column_names_path, "a") as f:
                                 for column, freq in column_frequencies.items():
                                     if freq == 1:  # Only write new columns
-                                        f.write(f"{column}\t{freq}\tcolumn\n")
+                                        var_name, unit = extract_units(column)
+                                        f.write(f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -574,9 +575,10 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
         all_terms.items(), key=lambda item: item[1][0], reverse=True)
 
     with open(column_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\n")
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
         for term, (frequency, source) in sorted_terms:
-            f.write(f"{term}\t{frequency}\t{source}\n")
+            var_name, unit = extract_units(term)
+            f.write(f"{term}\t{frequency}\t{source}\t{var_name}\t{unit}\n")
 
     # Log any errors that occurred during processing
     if errors["response_errors"]:

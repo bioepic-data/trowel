@@ -1,5 +1,7 @@
 """String utility functions for text processing and cleaning."""
 
+import re
+
 def clean_unicode_chars(text):
     """Clean Unicode special characters from a string.
     
@@ -74,3 +76,34 @@ def clean_unicode_chars(text):
         text = text.replace(char, '')
     
     return text
+
+
+def extract_units(name):
+    """Extract the variable name and unit from a column name string.
+    
+    This function searches for units specified in parentheses at the end of a name.
+    Examples:
+        "density (g/cm3)" -> ("density", "g/cm3")
+        "d18o (permil)" -> ("d18o", "permil")
+        "temperature (¡c)" -> ("temperature", "¡c")
+        "regular name" -> ("regular name", "")
+        
+    Args:
+        name: String containing a possible variable name with units
+        
+    Returns:
+        Tuple containing (variable_name, units)
+    """
+    if not name:
+        return "", ""
+        
+    # Match pattern like "name (unit)" where unit can contain special characters
+    pattern = r'^(.*?)\s*\(([^)]+)\)\s*$'
+    match = re.match(pattern, name)
+    
+    if match:
+        var_name = match.group(1).strip()
+        unit = match.group(2).strip()
+        return var_name, unit
+    else:
+        return name, ""
