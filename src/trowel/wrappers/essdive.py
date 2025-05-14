@@ -17,7 +17,7 @@ from tqdm import tqdm
 import openpyxl
 import xlrd
 
-from trowel.utils.string_utils import clean_unicode_chars, extract_units
+from trowel.utils.string_utils import clean_unicode_chars, extract_units, clean_punctuation
 
 BASE_URL = "https://api.ess-dive.lbl.gov"
 
@@ -622,7 +622,7 @@ def normalize_variables(variables: list) -> list:
     This function:
     1. Splits hierarchical terms (those with '>')
     2. Removes Unicode special characters (BOM, zero-width spaces, etc.)
-    3. Removes leading punctuation and special characters
+    3. Removes leading and trailing punctuation (preserves parentheses and brackets)
     4. Converts to lowercase
     5. Replaces underscores with spaces
     6. Strips whitespace
@@ -647,20 +647,18 @@ def normalize_variables(variables: list) -> list:
                     continue
                 v = v.lower().replace("_", " ").strip()
                 
-                # Remove leading punctuation and non-alphanumeric characters
-                while v and (v[0] in string.punctuation or not v[0].isalnum()):
-                    v = v[1:]
+                # Clean leading and trailing punctuation while preserving parentheses and brackets
+                v = clean_punctuation(v, preserve_brackets=True)
                 
-                if v and v not in normalized and len(v) <= 70:  # Also enforce length limit here
+                if v and v not in normalized and len(v) <= 70:  # Also enforce length limit
                     normalized.append(v)
         else:
             var = var.lower().replace("_", " ").strip()
             
-            # Remove leading punctuation and non-alphanumeric characters
-            while var and (var[0] in string.punctuation or not var[0].isalnum()):
-                var = var[1:]
+            # Clean leading and trailing punctuation while preserving parentheses and brackets
+            var = clean_punctuation(var, preserve_brackets=True)
             
-            if var and var not in normalized and len(var) <= 70:  # Also enforce length limit here
+            if var and var not in normalized and len(var) <= 70:  # Also enforce length limit
                 normalized.append(var)
     
     normalized.sort()
