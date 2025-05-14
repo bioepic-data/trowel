@@ -426,6 +426,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                         keywords = parse_eml_keywords(response_text)
 
                         # Normalize keywords
+                        # We'll treat them like variables though
                         keywords = normalize_variables(keywords)
 
                         # Update keyword frequencies
@@ -517,6 +518,9 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                             errors["unsupported_filetype"].append(
                                 f"{url} (filetype: {file_ext})")
                             continue
+
+                        # Normalize the column names
+                        data_names = normalize_variables(data_names)
 
                         # Update column frequencies
                         new_columns = False
