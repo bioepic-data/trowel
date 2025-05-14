@@ -542,23 +542,35 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 continue
 
     # After processing all files, update the file with final frequencies
-    # This overwrites the file with the complete, sorted results - combining both columns and keywords
-    # Merge the two dictionaries with a source identifier
+    # First identify terms that appear in both columns and keywords and combine their sources
+    # Create a dictionary to track combined term frequencies and sources
     all_terms = {}
+
+    # Process column terms first
     for column, freq in column_frequencies.items():
-        all_terms[f"{column}|column"] = freq
+        # If this term also appears as a keyword, combine sources
+        if column in keyword_frequencies:
+            source = "column|keyword"
+            # Sum the frequencies from both sources
+            combined_freq = freq + keyword_frequencies[column]
+            all_terms[column] = (combined_freq, source)
+            # Mark this keyword as processed
+            keyword_frequencies[column] = -1  # Mark as already processed
+        else:
+            all_terms[column] = (freq, "column")
 
+    # Process remaining keywords (those not already combined with columns)
     for keyword, freq in keyword_frequencies.items():
-        all_terms[f"{keyword}|keyword"] = freq
+        if freq > 0:  # Only process keywords that weren't already combined
+            all_terms[keyword] = (freq, "keyword")
 
-    # Sort by frequency
+    # Sort by frequency (highest first)
     sorted_terms = sorted(
-        all_terms.items(), key=lambda item: item[1], reverse=True)
+        all_terms.items(), key=lambda item: item[1][0], reverse=True)
 
     with open(column_names_path, "w") as f:
         f.write("name\tfrequency\tsource\n")
-        for term_with_source, frequency in sorted_terms:
-            term, source = term_with_source.split('|')
+        for term, (frequency, source) in sorted_terms:
             f.write(f"{term}\t{frequency}\t{source}\n")
 
     # Log any errors that occurred during processing
