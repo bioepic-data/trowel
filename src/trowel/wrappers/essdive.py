@@ -395,11 +395,11 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
         for idx, row in enumerate(tqdm(xml_files.iter_rows(named=True), desc="Processing XML files", unit="file", total=len(xml_files))):
             url = row["url"]
             filename = row["name"]
-            
+
             try:
                 response = requests.get(url, headers=USER_HEADERS, verify=True)
                 status_code = response.status_code
-                
+
                 if status_code == 200:
                     try:
                         # Try to decode the content as UTF-8
@@ -408,15 +408,21 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                         except UnicodeDecodeError:
                             # If UTF-8 fails, try another common encoding
                             try:
-                                response_text = response.content.decode('latin-1')
+                                response_text = response.content.decode(
+                                    'latin-1')
                             except UnicodeDecodeError:
                                 # Last resort, ignore errors
-                                response_text = response.content.decode('utf-8', errors='ignore')
-                                logger.warning(f"Had to ignore encoding errors for {url}")
-                        
+                                response_text = response.content.decode(
+                                    'utf-8', errors='ignore')
+                                logger.warning(
+                                    f"Had to ignore encoding errors for {url}")
+
                         # Extract keywords from the XML
                         keywords = parse_eml_keywords(response_text)
-                        
+
+                        # Normalize keywords
+                        keywords = normalize_variables(keywords)
+
                         # Update keyword frequencies
                         new_keywords = False
                         for keyword in keywords:
@@ -425,22 +431,25 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                             else:
                                 keyword_frequencies[keyword] = 1
                                 new_keywords = True
-                        
+
                         # If we found new keywords, append them to the file
                         if new_keywords:
                             with open(column_names_path, "a") as f:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
-                                        f.write(f"{keyword}\t{freq}\tkeyword\n")
-                    
+                                        f.write(
+                                            f"{keyword}\t{freq}\tkeyword\n")
+
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
-                        logger.debug(f"Error processing XML file {filename}: {str(e)}")
+                        logger.debug(
+                            f"Error processing XML file {filename}: {str(e)}")
                         continue
                 else:
-                    errors["response_errors"].append(f"{url} (status code: {response.status_code})")
+                    errors["response_errors"].append(
+                        f"{url} (status code: {response.status_code})")
                     continue
-            
+
             except Exception as e:
                 errors["failed_urls"].append(f"{url} ({str(e)})")
                 continue
@@ -538,19 +547,20 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     all_terms = {}
     for column, freq in column_frequencies.items():
         all_terms[f"{column}|column"] = freq
-    
+
     for keyword, freq in keyword_frequencies.items():
         all_terms[f"{keyword}|keyword"] = freq
-    
+
     # Sort by frequency
-    sorted_terms = sorted(all_terms.items(), key=lambda item: item[1], reverse=True)
-    
+    sorted_terms = sorted(
+        all_terms.items(), key=lambda item: item[1], reverse=True)
+
     with open(column_names_path, "w") as f:
         f.write("name\tfrequency\tsource\n")
         for term_with_source, frequency in sorted_terms:
             term, source = term_with_source.split('|')
             f.write(f"{term}\t{frequency}\t{source}\n")
-            
+
     # Log any errors that occurred during processing
     if errors["response_errors"]:
         logger.error(
