@@ -372,8 +372,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
     # Get the set of entries that are XML files (could be EML)
     xml_files = filetable.filter(
-        (pl.col("name").str.to_lowercase().str.ends_with(".xml")) |
-        (pl.col("encoding").str.contains("xml", ignore_case=True))
+        (pl.col("name").str.to_lowercase().str.ends_with(".xml"))
     )
 
     # Get the set of entries that look like they are data dictionaries
