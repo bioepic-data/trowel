@@ -4,6 +4,7 @@
 
 from io import StringIO, BytesIO
 import sys
+import string
 import os
 import tempfile
 from typing import Tuple, List
@@ -15,6 +16,8 @@ import xml.etree.ElementTree as ET
 from tqdm import tqdm
 import openpyxl
 import xlrd
+
+from trowel.utils.string_utils import clean_unicode_chars
 
 BASE_URL = "https://api.ess-dive.lbl.gov"
 
@@ -297,7 +300,8 @@ def parse_excel_header(content: bytes, filename: str) -> List[str]:
             for cell in next(ws.rows):
                 if cell.value and isinstance(cell.value, (str, int, float)):
                     value = str(cell.value).strip()
-                    if value and len(value) <= 70:  # Skip empty names and names > 70 chars
+                    # Skip empty names and names > 70 chars
+                    if value and len(value) <= 70:
                         header_names.append(value.lower().replace("_", " "))
         elif file_ext == '.xls':
             # Use xlrd for .xls files
@@ -311,7 +315,8 @@ def parse_excel_header(content: bytes, filename: str) -> List[str]:
                 value = ws.cell_value(0, col)
                 if value:
                     value = str(value).strip()
-                    if value and len(value) <= 70:  # Skip empty names and names > 70 chars
+                    # Skip empty names and names > 70 chars
+                    if value and len(value) <= 70:
                         header_names.append(value.lower().replace("_", " "))
     except Exception as e:
         logger.debug(f"Error parsing Excel file {filename}: {str(e)}")
@@ -614,11 +619,12 @@ def normalize_variables(variables: list) -> list:
     
     This function:
     1. Splits hierarchical terms (those with '>')
-    2. Removes leading punctuation and special characters
-    3. Converts to lowercase
-    4. Replaces underscores with spaces
-    5. Strips whitespace
-    6. Sorts the list
+    2. Removes Unicode special characters (BOM, zero-width spaces, etc.)
+    3. Removes leading punctuation and special characters
+    4. Converts to lowercase
+    5. Replaces underscores with spaces
+    6. Strips whitespace
+    7. Sorts the list
     """
     normalized = []
     for var in variables:
@@ -628,9 +634,8 @@ def normalize_variables(variables: list) -> list:
         # Convert to string if it's not already
         var = str(var)
         
-        # Remove byte order mark (BOM) and other invisible characters
-        var = var.replace('\ufeff', '')  # Remove BOM
-        var = var.replace('\u200b', '')  # Remove zero-width space
+        # Clean Unicode special characters
+        var = clean_unicode_chars(var)
         
         if ">" in var:
             # This is a hierarchy but we just want all terms
@@ -640,22 +645,20 @@ def normalize_variables(variables: list) -> list:
                     continue
                 v = v.lower().replace("_", " ").strip()
                 
-                # Remove leading punctuation and special characters
-                import string
+                # Remove leading punctuation and non-alphanumeric characters
                 while v and (v[0] in string.punctuation or not v[0].isalnum()):
                     v = v[1:]
                 
-                if v and v not in normalized:
+                if v and v not in normalized and len(v) <= 70:  # Also enforce length limit here
                     normalized.append(v)
         else:
             var = var.lower().replace("_", " ").strip()
-            # Remove leading punctuation and special characters
-            import string
+            
+            # Remove leading punctuation and non-alphanumeric characters
             while var and (var[0] in string.punctuation or not var[0].isalnum()):
                 var = var[1:]
-                var = var[1:]
             
-            if var and var not in normalized:
+            if var and var not in normalized and len(var) <= 70:  # Also enforce length limit here
                 normalized.append(var)
     
     normalized.sort()
@@ -666,11 +669,22 @@ def parse_header(header: str) -> list:
     """Parse header from a data file.
     Also normalizes and filters out excessively long column names (>70 chars)."""
     header_names = []
+    
+    # Clean Unicode special characters first
+    header = clean_unicode_chars(header)
+    
     reader = csv.reader(StringIO(header))
     for row in reader:
         for name in row:
             if name != "" and len(name) <= 70:  # Skip empty names and names > 70 chars
-                header_names.append(name.lower().replace("_", " ").strip())
+                clean_name = clean_unicode_chars(name.lower().replace("_", " ").strip())
+                
+                # Remove leading punctuation and non-alphanumeric characters
+                while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
+                    clean_name = clean_name[1:]
+                
+                if clean_name:  # Only add if not empty after cleaning
+                    header_names.append(clean_name)
     return header_names
 
 
@@ -678,13 +692,24 @@ def parse_data_dictionary(dd: str) -> list:
     """Parse a data dictionary.
     Also normalizes and filters out excessively long column names (>70 chars)."""
     data_names = []
+    
+    # Clean Unicode special characters first
+    dd = clean_unicode_chars(dd)
+    
     reader = csv.reader(StringIO(dd))
     for row in reader:
         if not row:  # Skip empty rows
             continue
         name = row[0]
         if name not in ["", "Column_or_Row_Name"] and len(name) <= 70:  # Skip headers and long names
-            data_names.append(name.lower().replace("_", " ").strip())
+            clean_name = clean_unicode_chars(name.lower().replace("_", " ").strip())
+            
+            # Remove leading punctuation and non-alphanumeric characters
+            while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
+                clean_name = clean_name[1:]
+            
+            if clean_name:  # Only add if not empty after cleaning
+                data_names.append(clean_name)
     return data_names
 
 
