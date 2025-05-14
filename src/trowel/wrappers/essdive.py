@@ -21,7 +21,18 @@ USER_HEADERS = {
     "Range": "bytes=0-1000",
 }
 
-PARSIBLE_ENCODINGS = ["text/csv", "text/plain"]
+PARSIBLE_ENCODINGS = ["text/csv",
+                      "text/plain",
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                      ]
+
+PARSIBLE_EXTENSIONS = [
+    ".csv",
+    ".txt",
+    ".tsv",
+    ".xlsx",
+    ".xls",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -275,8 +286,6 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
     # TODO: parse EML XML
 
-    # TODO: parse Excel spreadsheet files
-
     # Define the output file path
     column_names_path = f"{outpath}/column_names.txt"
 
@@ -297,7 +306,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     # This includes CSV files and other parsable formats
     tab_data_files = filetable.filter(
         (pl.col("encoding").is_in(PARSIBLE_ENCODINGS) |
-         pl.col("name").str.ends_with(".csv")) &
+         pl.col("name").str.to_lowercase().str.contains("|".join([ext + "$" for ext in PARSIBLE_EXTENSIONS]))) &
         ~pl.col("name").str.to_lowercase().str.starts_with("readme")
     )
 
