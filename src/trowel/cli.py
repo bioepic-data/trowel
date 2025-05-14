@@ -11,7 +11,15 @@ __all__ = [
     "main",
 ]
 
-path_option = click.option("-p", "--path", help="Path to a file or directory.")
+# Configure logging to suppress DEBUG messages from urllib3 and other chatty libraries
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("connectionpool").setLevel(logging.WARNING)
+
+path_option = click.option(
+    "-p", "--path", help="Path to a file or directory.", required=False)
+outpath_option = click.option(
+    "-o", "--outpath", help="Directory where output files should be written.", required=False, default=".")
 
 # Get token from environment
 ESSDIVE_TOKEN = os.getenv("ESSDIVE_TOKEN")
@@ -31,52 +39,74 @@ def main():
     :param quiet: Boolean to be quiet or verbose.
     """
 
+    # Configure the root logger
     logger = logging.getLogger()
     logger.setLevel(level=logging.DEBUG)
+
+    # Set up console handler with a cleaner format
+    ch = logging.StreamHandler()
+    formatter = logging.Formatter('%(levelname)s: %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
 
 @main.command()
 @path_option
-def get_essdive_metadata(path):
-    """Given a file containing one DOI per line, return metadata from ESS-DIVE."""
+@outpath_option
+def get_essdive_metadata(path, outpath):
+    """Given a file containing one DOI per line, return metadata from ESS-DIVE.
+    Parameters:
+    path: Path to a file containing DOIs, with or without the doi prefix, one per line.
+    outpath: Directory where output files should be written.
+    """
 
     if not path:
-        logging.error("You must provide a path to a file containing DOIs.")
+        logging.error(
+            "You must provide a path to a file containing DOIs with the --path option.")
+        sys.exit()
+
+    if not os.path.exists(outpath):
+        logging.error(
+            f"The specified output directory '{outpath}' does not exist.")
         sys.exit()
 
     with open(path, "r") as f:
         identifiers = f.readlines()
 
-    results, frequencies, filetable = get_metadata(identifiers, ESSDIVE_TOKEN)
+    results_path, frequencies_path, filetable_path = get_metadata(
+        identifiers, ESSDIVE_TOKEN, outpath)
 
-    with open("frequencies.txt", "w") as freq_file:
-        for freq in frequencies:
-            freq_file.write(f"{freq}\t{frequencies[freq]}\n")
-
-    with open("results.txt", "w") as results_file:
-        results_file.write(str(results))
-
-    with open("filetable.txt", "w") as filetable_file:
-        filetable_file.write(str(filetable))
+    logging.info(f"Results written to {results_path}")
+    logging.info(f"Frequencies written to {frequencies_path}")
+    logging.info(f"File table written to {filetable_path}")
 
 
 @main.command()
-def get_essdive_column_names():
-    """Get all column names from all data files.
+@path_option
+@outpath_option
+def get_essdive_column_names(path, outpath):
+    """Get all column names from all data files and keywords from XML files.
     Files are those with identifiers retrieved by the get_essdive_metadata function.
     By default, this is filetable.txt."""
 
-    filetable_path = "filetable.txt"
+    # If path is not provided, look for filetable.txt in the outpath directory
+    if not path:
+        filetable_path = os.path.join(outpath, "filetable.txt")
+    else:
+        filetable_path = path
 
     if not os.path.exists(filetable_path):
+        logging.error(f"The filetable file {filetable_path} does not exist.")
         logging.error("You must run get_essdive_metadata first to get the filetable.")
         sys.exit()
 
-    column_names = get_column_names(filetable_path)
+    if not os.path.exists(outpath):
+        logging.error(f"The specified output directory '{outpath}' does not exist.")
+        sys.exit()
 
-    with open("column_names.txt", "w") as filetable_file:
-        for colname in column_names:
-            filetable_file.write(f"{colname}\t{column_names[colname]}\n")
+    column_names_path = get_column_names(filetable_path, outpath)
+    
+    logging.info(f"Column names and keywords written to {column_names_path}")
 
 
 if __name__ == "__main__":
