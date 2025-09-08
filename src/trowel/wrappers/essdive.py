@@ -7,6 +7,7 @@ import sys
 import string
 import os
 import tempfile
+import re
 from typing import Tuple, List
 import csv
 import logging
@@ -45,6 +46,24 @@ PARSIBLE_EXTENSIONS = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_tsv_field(value) -> str:
+    """Normalize a value destined for TSV output.
+
+    Replaces any newlines / carriage returns / tabs with a single space,
+    collapses consecutive whitespace, and strips leading/trailing spaces.
+    Non-string values are coerced to string. None becomes empty string.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        value = str(value)
+    # Replace problematic control characters with space
+    value = value.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    # Collapse multiple whitespace to a single space
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
 
 
 def get_metadata(
@@ -140,11 +159,13 @@ def get_metadata(
             these_results = response.json()
             # Add relevant parts to the dataframe
             essdive_id = these_results["id"]
-            name = these_results["dataset"]["name"]
+            name = sanitize_tsv_field(these_results["dataset"]["name"])
             try:
                 variables = normalize_variables(
                     these_results["dataset"]["variableMeasured"]
                 )
+                # Sanitize variable names (defensive – normalize_variables should already do most cleaning)
+                variables = [sanitize_tsv_field(v) for v in variables if v]
                 for var in variables:
                     if var in all_variables:
                         all_variables[var] += 1
@@ -153,7 +174,7 @@ def get_metadata(
             except KeyError:
                 errors["no_variables"].append(identifier)
                 variables = []
-            desc_text = these_results["dataset"]["description"]
+            desc_text = these_results["dataset"].get("description", [])
             try:
                 site_desc = these_results["dataset"]["spatialCoverage"][0][
                     "description"
@@ -167,6 +188,22 @@ def get_metadata(
                 errors["no_methods"].append(identifier)
                 methods = []
 
+            # Handle cases where description / methods may be strings instead of lists
+            if isinstance(desc_text, str):
+                desc_joined = desc_text
+            else:
+                # Some APIs return list/array of strings
+                desc_joined = " ".join([d for d in desc_text if d])
+            if isinstance(methods, str):
+                methods_joined = methods
+            else:
+                methods_joined = " ".join([m for m in methods if m])
+
+            # Sanitize fields for TSV safety
+            description_clean = sanitize_tsv_field(desc_joined)
+            site_desc_clean = sanitize_tsv_field(site_desc)
+            methods_clean = sanitize_tsv_field(methods_joined)
+
             # Create entry for results and append to file
             entry = pl.DataFrame(
                 {
@@ -174,9 +211,9 @@ def get_metadata(
                     "id": [essdive_id],
                     "name": [name],
                     "variables": ["|".join(variables)],
-                    "description": [" ".join(desc_text)],
-                    "site_description": [site_desc],
-                    "methods": [" ".join(methods)],
+                    "description": [description_clean],
+                    "site_description": [site_desc_clean],
+                    "methods": [methods_clean],
                 }
             )
             # Append to results file
