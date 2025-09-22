@@ -66,9 +66,69 @@ def sanitize_tsv_field(value) -> str:
     return value.strip()
 
 
+def _norm_header_key(h: str) -> str:
+    """Normalize a CSV header key for matching regardless of case/spacing/punct."""
+    if not isinstance(h, str):
+        h = str(h)
+    return re.sub(r"[^a-z0-9]", "", h.lower())
+
+
+def append_dd_content_to_file(content: str, dataset_id: str, source_filename: str, out_path: str) -> int:
+    """Append rows from a data dictionary CSV (comma-delimited) to a compiled TSV file.
+
+    The compiled TSV columns are: dataset_id, source_filename, and the canonical DD columns.
+    Returns number of rows appended.
+    """
+    canonical_columns = [
+        "Column_or_Row_Name",
+        "Unit",
+        "Definition",
+        "Column_or_Row_Long_Name",
+        "Data_Type",
+        "Term_Type",
+        "missing_value_code",
+    ]
+    canonical_norm_map = {
+        "columnorrowname": "Column_or_Row_Name",
+        "unit": "Unit",
+        "definition": "Definition",
+        "columnorrowlongname": "Column_or_Row_Long_Name",
+        "datatype": "Data_Type",
+        "termtype": "Term_Type",
+        "missingvaluecode": "missing_value_code",
+    }
+
+    reader = csv.DictReader(StringIO(content))
+    if not reader.fieldnames:
+        return 0
+
+    # Map canonical column -> actual header in this file (if present)
+    source_map = {}
+    for field in reader.fieldnames:
+        norm = _norm_header_key(field)
+        if norm in canonical_norm_map and canonical_norm_map[norm] not in source_map:
+            source_map[canonical_norm_map[norm]] = field
+
+    rows_written = 0
+    with open(out_path, "a", newline="") as f:
+        writer = csv.writer(f, delimiter="\t", lineterminator="\n")
+        for row in reader:
+            out_vals = [
+                sanitize_tsv_field(dataset_id),
+                sanitize_tsv_field(source_filename),
+            ]
+            for col in canonical_columns:
+                src = source_map.get(col)
+                val = row.get(src, "") if src else ""
+                out_vals.append(sanitize_tsv_field(val))
+            writer.writerow(out_vals)
+            rows_written += 1
+    return rows_written
+
+
 def get_metadata(
     identifiers: list, token: str, outpath: str = "."
-) -> Tuple[str, dict, str]:
+) -> Tuple[str, str, str]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
     This also requires an authentication token for ESS-DIVE.
@@ -334,9 +394,12 @@ def parse_excel_header(content: bytes, filename: str) -> List[str]:
             ws = wb.active
 
             # Read the first row (header)
-            for cell in next(ws.rows):
-                if cell.value and isinstance(cell.value, (str, int, float)):
-                    value = str(cell.value).strip()
+            # type: ignore[attr-defined]
+            first_row = next(ws.iter_rows(
+                min_row=1, max_row=1, values_only=True))
+            for cell_val in first_row:
+                if cell_val and isinstance(cell_val, (str, int, float)):
+                    value = str(cell_val).strip()
                     # Skip empty names and names > 70 chars
                     if value and len(value) <= 70:
                         header_names.append(value.lower().replace("_", " "))
@@ -388,6 +451,22 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     """
     # Define the output file path
     column_names_path = f"{outpath}/column_names.txt"
+
+    # Initialize a compiled data dictionaries output
+    data_dict_compiled_path = f"{outpath}/data_dictionaries.tsv"
+    with open(data_dict_compiled_path, "w", newline="") as _dd_out:
+        dd_writer = csv.writer(_dd_out, delimiter="\t", lineterminator="\n")
+        dd_writer.writerow([
+            "dataset_id",
+            "source_filename",
+            "Column_or_Row_Name",
+            "Unit",
+            "Definition",
+            "Column_or_Row_Long_Name",
+            "Data_Type",
+            "Term_Type",
+            "missing_value_code",
+        ])
 
     # Initialize the column and keyword frequency dictionaries for tracking
     column_frequencies = {}
@@ -500,6 +579,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
     # Now retrieve the column names, then the data dictionaries
     # We will retain the data dictionaries
+    total_dd_rows = 0
     for i, fileset_name in enumerate([("data files", tab_data_files), ("data dictionaries", data_dict_files)]):
         name, fileset = fileset_name
 
@@ -538,11 +618,20 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                         f"Had to ignore encoding errors for {url}")
 
                             if i == 1:  # Data dictionary
-                                # Write the data dictionary file itself to the output directory
-                                dd_output_path = os.path.join(
-                                    outpath, f"data_dictionary_{idx+1}_{sanitize_tsv_field(filename)}")
-                                with open(dd_output_path, "w", encoding="utf-8") as dd_file:
-                                    dd_file.write(response_text)
+                                # Append full DD content to compiled TSV
+                                try:
+                                    total_dd_rows += append_dd_content_to_file(
+                                        response_text,
+                                        row["dataset_id"],
+                                        filename,
+                                        data_dict_compiled_path,
+                                    )
+                                except Exception as e:
+                                    errors["encoding_errors"].append(
+                                        f"{url} ({str(e)})")
+                                    logger.debug(
+                                        f"Error parsing DD content for {filename}: {str(e)}")
+                                # Also extract names for frequency counting
                                 data_names = parse_data_dictionary(
                                     response_text)
                             else:  # CSV file
@@ -630,6 +719,9 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
             f.write(f"{term}\t{frequency}\t{source}\t{var_name}\t{unit}\n")
 
     # Log any errors that occurred during processing
+    if total_dd_rows:
+        logger.info(
+            f"Compiled {total_dd_rows} data dictionary rows into {data_dict_compiled_path}")
     if errors["response_errors"]:
         logger.error(
             f"Response errors for {len(errors['response_errors'])} URLs")
