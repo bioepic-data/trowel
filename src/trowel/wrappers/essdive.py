@@ -110,17 +110,33 @@ def append_dd_content_to_file(content: str, dataset_id: str, source_filename: st
             source_map[canonical_norm_map[norm]] = field
 
     rows_written = 0
+    # Row value markers to exclude (normalized)
+    metadata_markers = {"columnorrowname", "filedescription",
+                        "missingvaluecodes", "missingvaluecode"}
     with open(out_path, "a", newline="") as f:
         writer = csv.writer(f, delimiter="\t", lineterminator="\n")
         for row in reader:
-            out_vals = [
-                sanitize_tsv_field(dataset_id),
-                sanitize_tsv_field(source_filename),
-            ]
+            # Determine if this row is a metadata row we should skip
+            name_src = source_map.get("Column_or_Row_Name")
+            name_val = row.get(name_src, "") if name_src else ""
+            name_norm = _norm_header_key(
+                sanitize_tsv_field(name_val)) if name_val else ""
+            if name_norm in metadata_markers:
+                continue
+
+            # Collect canonical values
+            canon_vals = []
             for col in canonical_columns:
                 src = source_map.get(col)
                 val = row.get(src, "") if src else ""
-                out_vals.append(sanitize_tsv_field(val))
+                canon_vals.append(sanitize_tsv_field(val))
+
+            # Skip completely empty rows across canonical fields
+            if not any(canon_vals):
+                continue
+
+            out_vals = [sanitize_tsv_field(dataset_id), sanitize_tsv_field(
+                source_filename)] + canon_vals
             writer.writerow(out_vals)
             rows_written += 1
     return rows_written
