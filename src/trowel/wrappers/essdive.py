@@ -429,7 +429,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
         f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
 
     # Process files
-    file_count = len(tab_data_files) + len(data_dict_files) + len(xml_files)
+    file_count = len(tab_data_files) + len(xml_files)
     logging.info(f"Processing {file_count} files...")
 
     # First process XML files for keywords
@@ -499,6 +499,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 continue
 
     # Now retrieve the column names, then the data dictionaries
+    # We will retain the data dictionaries
     for i, fileset_name in enumerate([("data files", tab_data_files), ("data dictionaries", data_dict_files)]):
         name, fileset = fileset_name
 
@@ -537,6 +538,11 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                         f"Had to ignore encoding errors for {url}")
 
                             if i == 1:  # Data dictionary
+                                # Write the data dictionary file itself to the output directory
+                                dd_output_path = os.path.join(
+                                    outpath, f"data_dictionary_{idx+1}_{sanitize_tsv_field(filename)}")
+                                with open(dd_output_path, "w", encoding="utf-8") as dd_file:
+                                    dd_file.write(response_text)
                                 data_names = parse_data_dictionary(
                                     response_text)
                             else:  # CSV file
