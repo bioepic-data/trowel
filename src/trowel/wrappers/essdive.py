@@ -2,7 +2,10 @@
 
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
-from io import StringIO, BytesIO
+# TODO: fix frequency counting as some variables are definitely
+# getting counted multiple times.
+
+from io import StringIO
 import sys
 import string
 import os
@@ -86,7 +89,7 @@ def append_dd_content_to_file(content: str, dataset_id: str, source_filename: st
         "Column_or_Row_Long_Name",
         "Data_Type",
         "Term_Type",
-        "missing_value_code",
+        "Missing_Value_Code",
     ]
     canonical_norm_map = {
         "columnorrowname": "Column_or_Row_Name",
@@ -95,7 +98,7 @@ def append_dd_content_to_file(content: str, dataset_id: str, source_filename: st
         "columnorrowlongname": "Column_or_Row_Long_Name",
         "datatype": "Data_Type",
         "termtype": "Term_Type",
-        "missingvaluecode": "missing_value_code",
+        "missingvaluecode": "Missing_Value_Code",
     }
 
     reader = csv.DictReader(StringIO(content))
@@ -648,7 +651,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                         f"{url} ({str(e)})")
                                     logger.debug(
                                         f"Error parsing DD content for {filename}: {str(e)}")
-                                # Also extract names for frequency counting
+                                # Also extract names for addition to the variable names list
                                 data_names = parse_data_dictionary(
                                     response_text)
                             else:  # CSV file
@@ -680,11 +683,11 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                 column_frequencies[name] = 1
                                 new_columns = True
 
-                        # If we found new variables from columns, append them to the file
+                        # If we found new variables, append them to the file
                         if new_columns:
                             with open(variable_names_path, "a") as f:
                                 for column, freq in column_frequencies.items():
-                                    if freq == 1:  # Only write new columns
+                                    if freq == 1:  # Only write new variables
                                         var_name, unit = extract_units(column)
                                         f.write(
                                             f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
@@ -852,7 +855,8 @@ def parse_header(header: str) -> list:
 
 def parse_data_dictionary(dd: str) -> list:
     """Parse a data dictionary.
-    Also normalizes and filters out excessively long column names (>70 chars)."""
+    Also normalizes and filters out excessively long column names (>70 chars),
+    avoids common metadata markers, and omits very un-variable-like entries."""
     data_names = []
 
     # Clean Unicode special characters first
