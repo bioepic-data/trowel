@@ -451,12 +451,13 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename.lower())[1]
 
 
-def get_column_names(filetable_path: str, outpath: str = ".") -> str:
-    """Get dataset column names from ESS-DIVE for a list of data identifiers.
+def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
+    """Get dataset variable names from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
     as input.
 
-    Column names and keywords are streamed to an output file as they are collected.
+    Variable names and keywords are streamed to an output file as they are collected.
+    This also includes data dictionary contents if present for a given dataset.
 
     Args:
         filetable_path: Path to the filetable created by get_metadata

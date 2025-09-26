@@ -5,7 +5,7 @@ import os
 import sys
 
 import click
-from trowel.wrappers.essdive import get_metadata, get_column_names
+from trowel.wrappers.essdive import get_metadata, get_variable_names
 from trowel.utils.matching_utils import match_terms
 
 __all__ = [
@@ -89,8 +89,10 @@ def get_essdive_metadata(path, outpath):
 @main.command()
 @path_option
 @outpath_option
-def get_essdive_column_names(path, outpath):
-    """Get all column names from all data files and keywords from XML files.
+def get_essdive_variables(path, outpath):
+    """Get all variable names from all data files and keywords from XML files.
+    Also extracts variable names from data dictionaries if present and
+    compiles them into a single list (data_dictionaries.tsv).
     Files are those with identifiers retrieved by the get_essdive_metadata function.
     By default, this is filetable.txt."""
 
@@ -111,9 +113,9 @@ def get_essdive_column_names(path, outpath):
             f"The specified output directory '{outpath}' does not exist.")
         sys.exit()
 
-    column_names_path = get_column_names(filetable_path, outpath)
+    variable_names_path = get_variable_names(filetable_path, outpath)
 
-    logging.info(f"Column names and keywords written to {column_names_path}")
+    logging.info(f"Variable names and keywords written to {variable_names_path}")
 
 # TODO: incorporate LLM embedding similarity matching for terms
 
