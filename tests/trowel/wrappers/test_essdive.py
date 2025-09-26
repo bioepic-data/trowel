@@ -108,14 +108,14 @@ class TestParseDataDictionary(unittest.TestCase):
     def test_parse_data_dictionary_basic(self):
         """Test basic data dictionary parsing."""
         dd = "Column_Name,Description\nTemp,Temperature in Celsius\npH,Acidity or alkalinity"
-        # The function includes column header in the output
-        expected = ["column name", "temp", "ph"]
+        # The function includes column header in the output and sorts results alphabetically
+        expected = ["column name", "ph", "temp"]
         self.assertEqual(parse_data_dictionary(dd), expected)
 
     def test_parse_data_dictionary_with_header(self):
         """Test data dictionary parsing with header row."""
         dd = "Column_or_Row_Name,Description\nTemp,Temperature in Celsius\npH,Acidity or alkalinity"
-        expected = ["temp", "ph"]
+        expected = ["ph", "temp"]
         self.assertEqual(parse_data_dictionary(dd), expected)
 
     def test_parse_data_dictionary_empty(self):
