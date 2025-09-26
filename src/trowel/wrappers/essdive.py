@@ -870,16 +870,23 @@ def _is_valid_variable_name(name: str) -> bool:
     """Check if a variable name is valid (not purely numeric, not empty, etc.)."""
     if not name or not name.strip():
         return False
-    
+
     clean_name = name.strip()
-    
+
     # Remove leading punctuation and non-alphanumeric characters
     while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
         clean_name = clean_name[1:]
-    
+
     if not clean_name:
         return False
-    
+
+    # Skip specific metadata terms (case-insensitive)
+    excluded_terms = {"n/a", "notes", "file_name", "header_rows", "data_type"}
+    if clean_name.lower().replace("_", " ").replace(" ", "_") in excluded_terms or \
+       clean_name.lower().replace("_", " ") in excluded_terms or \
+       clean_name.lower().replace(" ", "_") in excluded_terms:
+        return False
+
     # Skip purely numeric names (integers or decimals)
     try:
         float(clean_name.replace(" ", ""))  # Remove spaces for number check
@@ -932,7 +939,7 @@ def parse_data_dictionary(dd: str) -> list:
         # Skip headers and collect all non-empty names
         if name not in ["", "Column_or_Row_Name"]:
             data_names.append(name)
-    
+
     # Apply consistent normalization (this will handle all filtering)
     return normalize_variables(data_names)
 
