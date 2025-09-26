@@ -499,6 +499,9 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
     column_frequencies = {}
     keyword_frequencies = {}
     data_dict_frequencies = {}
+    # Track definitions and units for variables from data dictionaries
+    variable_definitions = {}
+    variable_units = {}
 
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
@@ -533,7 +536,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
 
     # Initialize the output file
     with open(variable_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\n")
 
     # Process files
     file_count = len(tab_data_files) + len(xml_files)
@@ -587,9 +590,9 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                             with open(variable_names_path, "a") as f:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
-                                        # Keywords typically don't have units, so same value for both columns
+                                        # Keywords typically don't have units or definitions
                                         f.write(
-                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\n")
+                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\t\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -659,9 +662,29 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                         f"{url} ({str(e)})")
                                     logger.debug(
                                         f"Error parsing DD content for {filename}: {str(e)}")
-                                # Also extract names for addition to the variable names list
+                                # Extract names and definitions for addition to the variable names list
                                 data_names = parse_data_dictionary(
                                     response_text)
+                                dd_definitions, dd_units = parse_dd_defs_units(
+                                    response_text)
+                                # Update variable definitions, combining multiple definitions with pipes
+                                for var_name, definition in dd_definitions.items():
+                                    if var_name in variable_definitions:
+                                        existing_defs = variable_definitions[var_name].split(
+                                            "|")
+                                        if definition not in existing_defs:
+                                            variable_definitions[var_name] += f"|{definition}"
+                                    else:
+                                        variable_definitions[var_name] = definition
+                                # Update variable units, combining multiple units with pipes
+                                for var_name, unit in dd_units.items():
+                                    if var_name in variable_units:
+                                        existing_units = variable_units[var_name].split(
+                                            "|")
+                                        if unit not in existing_units:
+                                            variable_units[var_name] += f"|{unit}"
+                                    else:
+                                        variable_units[var_name] = unit
                             else:  # CSV file
                                 # For CSV, just get the header
                                 for line in response_text.splitlines():
@@ -697,10 +720,13 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                 with open(variable_names_path, "a") as f:
                                     for dd_var, freq in data_dict_frequencies.items():
                                         if freq == 1:  # Only write new variables
-                                            var_name, unit = extract_units(
-                                                dd_var)
+                                            var_name, _ = extract_units(dd_var)
+                                            definition = variable_definitions.get(
+                                                dd_var, "")
+                                            units = variable_units.get(
+                                                dd_var, "")
                                             f.write(
-                                                f"{dd_var}\t{freq}\tdata_dictionary\t{var_name}\t{unit}\n")
+                                                f"{dd_var}\t{freq}\tdata_dictionary\t{var_name}\t{units}\t{definition}\n")
                         else:  # Regular data files
                             new_columns = False
                             for name in data_names:
@@ -717,8 +743,9 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                         if freq == 1:  # Only write new variables
                                             var_name, unit = extract_units(
                                                 column)
+                                            # Columns don't have definitions or units from data dictionaries
                                             f.write(
-                                                f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
+                                                f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\t\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -770,10 +797,13 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
         all_terms.items(), key=lambda item: item[1][0], reverse=True)
 
     with open(variable_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\n")
         for term, (frequency, source) in sorted_terms:
-            var_name, unit = extract_units(term)
-            f.write(f"{term}\t{frequency}\t{source}\t{var_name}\t{unit}\n")
+            var_name, _ = extract_units(term)
+            definition = variable_definitions.get(term, "")
+            units = variable_units.get(term, "")
+            f.write(
+                f"{term}\t{frequency}\t{source}\t{var_name}\t{units}\t{definition}\n")
 
     # Log any errors that occurred during processing
     if total_dd_rows:
@@ -942,6 +972,67 @@ def parse_data_dictionary(dd: str) -> list:
 
     # Apply consistent normalization (this will handle all filtering)
     return normalize_variables(data_names)
+
+
+def parse_dd_defs_units(dd: str) -> tuple:
+    """Parse a data dictionary and extract variable names with their definitions and units.
+    Returns:
+        Tuple of two dicts: (definitions, units)
+        Each dict maps normalized variable names to their values (pipe-delimited if multiple).
+    """
+    var_definitions = {}
+    var_units = {}
+    dd = clean_unicode_chars(dd)
+    reader = csv.DictReader(StringIO(dd))
+    if not reader.fieldnames:
+        return var_definitions, var_units
+
+    # Find the definition and unit columns (case-insensitive)
+    definition_col = None
+    unit_col = None
+    for field in reader.fieldnames:
+        norm_field = _norm_header_key(field)
+        if norm_field == "definition":
+            definition_col = field
+        if norm_field == "unit":
+            unit_col = field
+    if not definition_col and not unit_col:
+        return var_definitions, var_units
+    for row in reader:
+        if not row:
+            continue
+
+        # First column is variable name
+        name = row.get(reader.fieldnames[0], "")
+        definition = row.get(definition_col, "") if definition_col else ""
+        unit = row.get(unit_col, "") if unit_col else ""
+        if name and name not in ["", "Column_or_Row_Name"]:
+            normalized_names = normalize_variables([name])
+            if normalized_names:
+                normalized_name = normalized_names[0]
+
+                # Get definitions
+                if definition and definition.strip():
+                    def_val = sanitize_tsv_field(definition.strip())
+                    if normalized_name in var_definitions:
+                        existing_defs = var_definitions[normalized_name].split(
+                            "|")
+                        if def_val not in existing_defs:
+                            var_definitions[normalized_name] += f"|{def_val}"
+                    else:
+                        var_definitions[normalized_name] = def_val
+
+                # Get units
+                if unit and unit.strip():
+                    unit_val = sanitize_tsv_field(unit.strip())
+                    if normalized_name in var_units:
+                        existing_units = var_units[normalized_name].split("|")
+                        if unit_val not in existing_units:
+                            var_units[normalized_name] += f"|{unit_val}"
+                    else:
+                        var_units[normalized_name] = unit_val
+
+    return var_definitions, var_units
 
 
 def parse_eml_keywords(content: str) -> List[str]:
