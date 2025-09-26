@@ -911,7 +911,8 @@ def parse_data_dictionary(dd: str) -> list:
                 # Skip purely numeric names (integers or decimals)
                 # Check if the name is purely numeric by trying to convert to float
                 try:
-                    float(clean_name.replace(" ", ""))  # Remove spaces for number check
+                    # Remove spaces for number check
+                    float(clean_name.replace(" ", ""))
                     # If conversion succeeds, it's purely numeric - skip it!
                     continue
                 except ValueError:
