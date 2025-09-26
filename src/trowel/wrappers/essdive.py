@@ -160,8 +160,8 @@ def get_metadata(
         Tuple containing paths to the results, variables frequency file, and file table file
     """
     # Create output file paths
-    results_path = f"{outpath}/results.txt"
-    filetable_path = f"{outpath}/filetable.txt"
+    results_path = f"{outpath}/results.tsv"
+    filetable_path = f"{outpath}/filetable.tsv"
 
     # Initialize empty files with headers
     results_schema = pl.DataFrame(
@@ -342,7 +342,7 @@ def get_metadata(
         logger.error("No files were found for the provided identifiers")
 
     # Write frequencies to file
-    frequencies_path = f"{outpath}/frequencies.txt"
+    frequencies_path = f"{outpath}/frequencies.tsv"
     with open(frequencies_path, "w") as freq_file:
         for freq in all_variables:
             freq_file.write(f"{freq}\t{all_variables[freq]}\n")
@@ -467,7 +467,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
         Path to the column names output file
     """
     # Define the output file path
-    column_names_path = f"{outpath}/column_names.txt"
+    variable_names_path = f"{outpath}/variable_names.tsv"
 
     # Initialize a compiled data dictionaries output
     data_dict_compiled_path = f"{outpath}/data_dictionaries.tsv"
@@ -482,7 +482,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
             "Column_or_Row_Long_Name",
             "Data_Type",
             "Term_Type",
-            "missing_value_code",
+            "Missing_value_code",
         ])
 
     # Initialize the column and keyword frequency dictionaries for tracking
@@ -521,7 +521,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
     tab_data_files = tab_data_files.join(xml_files, on="url", how="anti")
 
     # Initialize the output file
-    with open(column_names_path, "w") as f:
+    with open(variable_names_path, "w") as f:
         f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
 
     # Process files
@@ -573,7 +573,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
 
                         # If we found new keywords, append them to the file
                         if new_keywords:
-                            with open(column_names_path, "a") as f:
+                            with open(variable_names_path, "a") as f:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
                                         # Keywords typically don't have units, so same value for both columns
@@ -680,9 +680,9 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                 column_frequencies[name] = 1
                                 new_columns = True
 
-                        # If we found new columns, append them to the file
+                        # If we found new variables from columns, append them to the file
                         if new_columns:
-                            with open(column_names_path, "a") as f:
+                            with open(variable_names_path, "a") as f:
                                 for column, freq in column_frequencies.items():
                                     if freq == 1:  # Only write new columns
                                         var_name, unit = extract_units(column)
@@ -729,7 +729,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
     sorted_terms = sorted(
         all_terms.items(), key=lambda item: item[1][0], reverse=True)
 
-    with open(column_names_path, "w") as f:
+    with open(variable_names_path, "w") as f:
         f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
         for term, (frequency, source) in sorted_terms:
             var_name, unit = extract_units(term)
@@ -771,7 +771,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
             logger.error(
                 f"  ...and {len(errors['unsupported_filetype']) - 5} more")
 
-    return column_names_path
+    return variable_names_path
 
 
 def normalize_variables(variables: list) -> list:
