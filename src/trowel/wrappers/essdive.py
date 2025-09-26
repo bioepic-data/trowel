@@ -488,9 +488,10 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
             "Missing_value_code",
         ])
 
-    # Initialize the column and keyword frequency dictionaries for tracking
+    # Initialize the column, keyword, and data dictionary frequency dictionaries for tracking
     column_frequencies = {}
     keyword_frequencies = {}
+    data_dict_frequencies = {}
 
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
@@ -674,23 +675,43 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                         # Normalize the column names
                         data_names = normalize_variables(data_names)
 
-                        # Update column frequencies
-                        new_columns = False
-                        for name in data_names:
-                            if name in column_frequencies:
-                                column_frequencies[name] += 1
-                            else:
-                                column_frequencies[name] = 1
-                                new_columns = True
+                        # Update frequencies based on source type
+                        if i == 1:  # Data dictionary
+                            new_data_dict_vars = False
+                            for name in data_names:
+                                if name in data_dict_frequencies:
+                                    data_dict_frequencies[name] += 1
+                                else:
+                                    data_dict_frequencies[name] = 1
+                                    new_data_dict_vars = True
 
-                        # If we found new variables, append them to the file
-                        if new_columns:
-                            with open(variable_names_path, "a") as f:
-                                for column, freq in column_frequencies.items():
-                                    if freq == 1:  # Only write new variables
-                                        var_name, unit = extract_units(column)
-                                        f.write(
-                                            f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
+                            # If we found new data dictionary variables, append them to the file
+                            if new_data_dict_vars:
+                                with open(variable_names_path, "a") as f:
+                                    for dd_var, freq in data_dict_frequencies.items():
+                                        if freq == 1:  # Only write new variables
+                                            var_name, unit = extract_units(
+                                                dd_var)
+                                            f.write(
+                                                f"{dd_var}\t{freq}\tdata_dictionary\t{var_name}\t{unit}\n")
+                        else:  # Regular data files
+                            new_columns = False
+                            for name in data_names:
+                                if name in column_frequencies:
+                                    column_frequencies[name] += 1
+                                else:
+                                    column_frequencies[name] = 1
+                                    new_columns = True
+
+                            # If we found new variables, append them to the file
+                            if new_columns:
+                                with open(variable_names_path, "a") as f:
+                                    for column, freq in column_frequencies.items():
+                                        if freq == 1:  # Only write new variables
+                                            var_name, unit = extract_units(
+                                                column)
+                                            f.write(
+                                                f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -706,27 +727,36 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                 continue
 
     # After processing all files, update the file with final frequencies
-    # First identify terms that appear in both columns and keywords and combine their sources
+    # First identify terms that appear in multiple sources and combine their sources
     # Create a dictionary to track combined term frequencies and sources
     all_terms = {}
 
-    # Process column terms first
-    for column, freq in column_frequencies.items():
-        # If this term also appears as a keyword, combine sources
-        if column in keyword_frequencies:
-            source = "column|keyword"
-            # Sum the frequencies from both sources
-            combined_freq = freq + keyword_frequencies[column]
-            all_terms[column] = (combined_freq, source)
-            # Mark this keyword as processed
-            keyword_frequencies[column] = -1  # Mark as already processed
-        else:
-            all_terms[column] = (freq, "column")
+    # Get all unique terms across all sources
+    all_unique_terms = set()
+    all_unique_terms.update(column_frequencies.keys())
+    all_unique_terms.update(keyword_frequencies.keys())
+    all_unique_terms.update(data_dict_frequencies.keys())
 
-    # Process remaining keywords (those not already combined with columns)
-    for keyword, freq in keyword_frequencies.items():
-        if freq > 0:  # Only process keywords that weren't already combined
-            all_terms[keyword] = (freq, "keyword")
+    # For each unique term, determine its sources and combined frequency
+    for term in all_unique_terms:
+        sources = []
+        total_freq = 0
+
+        if term in column_frequencies:
+            sources.append("column")
+            total_freq += column_frequencies[term]
+
+        if term in keyword_frequencies:
+            sources.append("keyword")
+            total_freq += keyword_frequencies[term]
+
+        if term in data_dict_frequencies:
+            sources.append("data_dictionary")
+            total_freq += data_dict_frequencies[term]
+
+        # Combine sources with pipe delimiter
+        combined_source = "|".join(sources)
+        all_terms[term] = (total_freq, combined_source)
 
     # Sort by frequency (highest first)
     sorted_terms = sorted(
