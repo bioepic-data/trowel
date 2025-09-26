@@ -31,7 +31,8 @@ class TestNormalizeVariables(unittest.TestCase):
 
     def test_normalize_variables_with_hierarchy(self):
         """Test normalization of hierarchical variables."""
-        variables = ["Climate>Temperature>Annual", "Climate>Temperature>Monthly"]
+        variables = ["Climate>Temperature>Annual",
+                     "Climate>Temperature>Monthly"]
         expected = ["annual", "climate", "monthly", "temperature"]
         self.assertEqual(normalize_variables(variables), expected)
 
@@ -75,7 +76,7 @@ class TestNormalizeVariables(unittest.TestCase):
 
 class TestParseHeader(unittest.TestCase):
     """Test suite for parse_header function."""
-    
+
     def test_parse_header_basic(self):
         """Test basic header parsing."""
         header = "Temp,pH,Conductivity"
@@ -104,7 +105,7 @@ class TestParseHeader(unittest.TestCase):
 
 class TestParseDataDictionary(unittest.TestCase):
     """Test suite for parse_data_dictionary function."""
-    
+
     def test_parse_data_dictionary_basic(self):
         """Test basic data dictionary parsing."""
         dd = "Column_Name,Description\nTemp,Temperature in Celsius\npH,Acidity or alkalinity"
@@ -127,7 +128,7 @@ class TestParseDataDictionary(unittest.TestCase):
 
 class TestParseEmlKeywords(unittest.TestCase):
     """Test suite for parse_eml_keywords function."""
-    
+
     def test_parse_eml_keywords_basic(self):
         """Test basic EML keyword parsing."""
         xml_content = """<?xml version="1.0" encoding="UTF-8"?>
@@ -141,7 +142,8 @@ class TestParseEmlKeywords(unittest.TestCase):
             </dataset>
         </eml:eml>"""
         expected = ["climate", "temperature", "precipitation"]
-        self.assertEqual(sorted(parse_eml_keywords(xml_content)), sorted(expected))
+        self.assertEqual(
+            sorted(parse_eml_keywords(xml_content)), sorted(expected))
 
     def test_parse_eml_keywords_empty(self):
         """Test parsing EML with no keywords."""
@@ -166,12 +168,12 @@ class TestParseEmlKeywords(unittest.TestCase):
 @pytest.mark.skip("Excel parsing tests require complex mocking of file I/O")
 class TestParseExcelHeader(unittest.TestCase):
     """Test suite for parse_excel_header function."""
-    
+
     def test_parse_xlsx_header(self):
         """Test parsing XLSX file header."""
         # We'd need a real XLSX file to test this properly
         pass
-        
+
     def test_parse_xls_header(self):
         """Test parsing XLS file header."""
         # We'd need a real XLS file to test this properly
