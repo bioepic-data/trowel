@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock, mock_open
 import requests
 import polars as pl
 
-from trowel.wrappers.essdive import get_metadata, get_column_names
+from trowel.wrappers.essdive import get_metadata, get_variable_names
 
 
 class TestGetMetadata(unittest.TestCase):
@@ -103,7 +103,7 @@ class TestGetMetadata(unittest.TestCase):
 
 
 @patch('requests.get')
-class TestGetColumnNames(unittest.TestCase):
+class TestGetVariableNames(unittest.TestCase):
     """Test suite for get_column_names function."""
     
     def setUp(self):
@@ -114,7 +114,7 @@ test-id-123\thttps://example.com/data.csv\tdata.csv\ttext/csv
 test-id-123\thttps://example.com/metadata.xml\tmetadata.xml\ttext/xml
 test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
         
-    def test_get_column_names_csv(self, mock_get):
+    def test_get_variable_names_csv(self, mock_get):
         """Test get_column_names with CSV file."""
         # Mock response for CSV file
         csv_response = MagicMock()
@@ -158,7 +158,7 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
                 f.write(self.mock_filetable_data)
                 
             # Call the function
-            column_names_path = get_column_names(filetable_path, temp_dir)
+            column_names_path = get_variable_names(filetable_path, temp_dir)
             
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
@@ -184,7 +184,7 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
             self.assertIn('column', sources)
             self.assertIn('keyword', sources)
             
-    def test_get_column_names_error(self, mock_get):
+    def test_get_variable_names_error(self, mock_get):
         """Test get_column_names with API error."""
         # Mock response for failed API call
         mock_get.return_value = MagicMock(status_code=404)
@@ -196,7 +196,7 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
                 f.write(self.mock_filetable_data)
                 
             # Call the function
-            column_names_path = get_column_names(filetable_path, temp_dir)
+            column_names_path = get_variable_names(filetable_path, temp_dir)
             
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
