@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock, mock_open
 import requests
 import polars as pl
 
-from trowel.wrappers.essdive import get_metadata, get_column_names
+from trowel.wrappers.essdive import get_metadata, get_variable_names
 
 
 class TestGetMetadata(unittest.TestCase):
@@ -60,13 +60,15 @@ class TestGetMetadata(unittest.TestCase):
             filetable_df = pl.read_csv(filetable_path, separator="\t")
             self.assertEqual(len(filetable_df), 1)
             self.assertEqual(filetable_df['dataset_id'][0], 'test-id-123')
-            self.assertEqual(filetable_df['url'][0], 'https://example.com/data.csv')
+            self.assertEqual(filetable_df['url']
+                             [0], 'https://example.com/data.csv')
 
             # Check contents of frequencies file - note that pH is normalized to lowercase
             with open(frequencies_path, 'r') as f:
                 frequencies_content = f.read()
                 self.assertIn('temperature', frequencies_content)
-                self.assertIn('ph', frequencies_content)  # pH is normalized to lowercase
+                # pH is normalized to lowercase
+                self.assertIn('ph', frequencies_content)
 
     @patch('requests.get')
     def test_get_metadata_error(self, mock_get):
@@ -103,9 +105,9 @@ class TestGetMetadata(unittest.TestCase):
 
 
 @patch('requests.get')
-class TestGetColumnNames(unittest.TestCase):
+class TestGetVariableNames(unittest.TestCase):
     """Test suite for get_column_names function."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         # Create mock filetable data
@@ -113,14 +115,14 @@ class TestGetColumnNames(unittest.TestCase):
 test-id-123\thttps://example.com/data.csv\tdata.csv\ttext/csv
 test-id-123\thttps://example.com/metadata.xml\tmetadata.xml\ttext/xml
 test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
-        
-    def test_get_column_names_csv(self, mock_get):
+
+    def test_get_variable_names_csv(self, mock_get):
         """Test get_column_names with CSV file."""
         # Mock response for CSV file
         csv_response = MagicMock()
         csv_response.status_code = 200
         csv_response.content = b"Temperature,pH,Conductivity\n25.3,7.2,150"
-        
+
         # Mock response for XML file
         xml_response = MagicMock()
         xml_response.status_code = 200
@@ -133,12 +135,12 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
                 </keywordSet>
             </dataset>
         </eml:eml>"""
-        
+
         # Mock response for data dictionary
         dd_response = MagicMock()
         dd_response.status_code = 200
         dd_response.content = b"Column_or_Row_Name,Description\nTemperature,Temperature in Celsius\nMoisture,Soil moisture content"
-        
+
         # Configure mock to return different responses based on URL
         def get_response(url, **kwargs):
             if 'data.csv' in url:
@@ -148,59 +150,59 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
             elif 'dd.csv' in url:
                 return dd_response
             return MagicMock(status_code=404)
-            
+
         mock_get.side_effect = get_response
-        
+
         # Create temp directory and filetable
         with tempfile.TemporaryDirectory() as temp_dir:
             filetable_path = os.path.join(temp_dir, 'filetable.txt')
             with open(filetable_path, 'w') as f:
                 f.write(self.mock_filetable_data)
-                
+
             # Call the function
-            column_names_path = get_column_names(filetable_path, temp_dir)
-            
+            column_names_path = get_variable_names(filetable_path, temp_dir)
+
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
-            
+
             # Check contents of output file
             column_names_df = pl.read_csv(column_names_path, separator="\t")
-            
+
             # Check that we have entries for both column names and keywords
             names = column_names_df['name'].to_list()
             sources = column_names_df['source'].to_list()
-            
+
             # Making assertions that match the function's actual behavior
             self.assertIn('temperature', names)
             self.assertIn('ph', names)
             self.assertIn('conductivity', names)
             self.assertIn('soil', names)
             self.assertIn('carbon', names)
-            
-            # The data dictionary content is processed but might not be included 
+
+            # The data dictionary content is processed but might not be included
             # in the final output if prioritizing other sources or if combining entries
-            
+
             # Check that we have proper source tags
             self.assertIn('column', sources)
             self.assertIn('keyword', sources)
-            
-    def test_get_column_names_error(self, mock_get):
+
+    def test_get_variable_names_error(self, mock_get):
         """Test get_column_names with API error."""
         # Mock response for failed API call
         mock_get.return_value = MagicMock(status_code=404)
-        
+
         # Create temp directory and filetable
         with tempfile.TemporaryDirectory() as temp_dir:
             filetable_path = os.path.join(temp_dir, 'filetable.txt')
             with open(filetable_path, 'w') as f:
                 f.write(self.mock_filetable_data)
-                
+
             # Call the function
-            column_names_path = get_column_names(filetable_path, temp_dir)
-            
+            column_names_path = get_variable_names(filetable_path, temp_dir)
+
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
-            
+
             # Check contents of output file - should have headers but no data
             with open(column_names_path, 'r') as f:
                 content = f.read().strip().split('\n')

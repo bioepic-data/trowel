@@ -2,13 +2,16 @@
 
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
-from io import StringIO, BytesIO
+# TODO: fix frequency counting as some variables are definitely
+# getting counted multiple times.
+
+from io import StringIO
 import sys
 import string
 import os
 import tempfile
 import re
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import csv
 import logging
 import polars as pl
@@ -66,9 +69,137 @@ def sanitize_tsv_field(value) -> str:
     return value.strip()
 
 
+def _norm_header_key(h: str) -> str:
+    """Normalize a CSV header key for matching regardless of case/spacing/punct."""
+    if not isinstance(h, str):
+        h = str(h)
+    return re.sub(r"[^a-z0-9]", "", h.lower())
+
+
+def parse_flmd_file(content: str) -> dict:
+    """Parse an FLMD (File Level Metadata) file and return a mapping of filename -> description.
+
+    Args:
+        content: The FLMD file content as a string
+
+    Returns:
+        Dictionary mapping filename to file description
+    """
+    file_descriptions = {}
+    try:
+        reader = csv.DictReader(StringIO(content))
+        if not reader.fieldnames:
+            return file_descriptions
+
+        # Find the columns for file name and description (case insensitive)
+        filename_col = None
+        description_col = None
+
+        for field in reader.fieldnames:
+            norm_field = _norm_header_key(field)
+            if norm_field in ["filename", "file_name", "name"]:
+                filename_col = field
+            elif norm_field in ["filedescription", "file_description", "description"]:
+                description_col = field
+
+        if not filename_col or not description_col:
+            logger.debug(
+                f"Could not find required columns in FLMD file. Available columns: {reader.fieldnames}")
+            return file_descriptions
+
+        # Parse the rows
+        for row in reader:
+            filename = row.get(filename_col, "").strip()
+            description = row.get(description_col, "").strip()
+
+            if filename and description:
+                file_descriptions[filename] = sanitize_tsv_field(description)
+
+    except Exception as e:
+        logger.debug(f"Error parsing FLMD file: {e}")
+
+    return file_descriptions
+
+
+def append_dd_content_to_file(content: str, dataset_id: str, source_filename: str, out_path: str) -> int:
+    """Append rows from a data dictionary CSV (comma-delimited) to a compiled TSV file.
+
+    The compiled TSV columns are: dataset_id, source_filename, and the canonical DD columns.
+    Returns number of rows appended.
+    """
+    canonical_columns = [
+        "Column_or_Row_Name",
+        "Unit",
+        "Definition",
+        "Column_or_Row_Long_Name",
+        "Data_Type",
+        "Term_Type",
+        "Missing_Value_Code",
+    ]
+    canonical_norm_map = {
+        "columnorrowname": "Column_or_Row_Name",
+        "unit": "Unit",
+        "definition": "Definition",
+        "columnorrowlongname": "Column_or_Row_Long_Name",
+        "datatype": "Data_Type",
+        "termtype": "Term_Type",
+        "missingvaluecode": "Missing_Value_Code",
+    }
+
+    reader = csv.DictReader(StringIO(content))
+    if not reader.fieldnames:
+        return 0
+
+    # Map canonical column -> actual header in this file (if present)
+    source_map = {}
+    for field in reader.fieldnames:
+        norm = _norm_header_key(field)
+        if norm in canonical_norm_map and canonical_norm_map[norm] not in source_map:
+            source_map[canonical_norm_map[norm]] = field
+
+    rows_written = 0
+    # Row value markers to exclude (normalized)
+    metadata_markers = {"columnorrowname", "filedescription",
+                        "missingvaluecodes", "missingvaluecode"}
+    with open(out_path, "a", newline="") as f:
+        writer = csv.writer(f, delimiter="\t", lineterminator="\n")
+        for row in reader:
+            # Determine if this row is a metadata row we should skip
+            name_src = source_map.get("Column_or_Row_Name")
+            name_val = row.get(name_src, "") if name_src else ""
+            name_norm = _norm_header_key(
+                sanitize_tsv_field(name_val)) if name_val else ""
+            if name_norm in metadata_markers:
+                continue
+
+            # Apply variable name validation to the Column_or_Row_Name
+            if name_val:
+                # Use normalize_variables to check if this is a valid variable name
+                normalized_names = normalize_variables([name_val])
+                if not normalized_names:  # If normalization filtered it out, skip this row
+                    continue
+
+            # Collect canonical values
+            canon_vals = []
+            for col in canonical_columns:
+                src = source_map.get(col)
+                val = row.get(src, "") if src else ""
+                canon_vals.append(sanitize_tsv_field(val))
+
+            # Skip completely empty rows across canonical fields
+            if not any(canon_vals):
+                continue
+
+            out_vals = [sanitize_tsv_field(dataset_id), sanitize_tsv_field(
+                source_filename)] + canon_vals
+            writer.writerow(out_vals)
+            rows_written += 1
+    return rows_written
+
+
 def get_metadata(
     identifiers: list, token: str, outpath: str = "."
-) -> Tuple[str, dict, str]:
+) -> Tuple[str, str, str]:
     """Get metadata from ESS-DIVE for a list of identifiers.
     The identifiers should be DOIs.
     This also requires an authentication token for ESS-DIVE.
@@ -84,8 +215,8 @@ def get_metadata(
         Tuple containing paths to the results, variables frequency file, and file table file
     """
     # Create output file paths
-    results_path = f"{outpath}/results.txt"
-    filetable_path = f"{outpath}/filetable.txt"
+    results_path = f"{outpath}/results.tsv"
+    filetable_path = f"{outpath}/filetable.tsv"
 
     # Initialize empty files with headers
     results_schema = pl.DataFrame(
@@ -266,7 +397,7 @@ def get_metadata(
         logger.error("No files were found for the provided identifiers")
 
     # Write frequencies to file
-    frequencies_path = f"{outpath}/frequencies.txt"
+    frequencies_path = f"{outpath}/frequencies.tsv"
     with open(frequencies_path, "w") as freq_file:
         for freq in all_variables:
             freq_file.write(f"{freq}\t{all_variables[freq]}\n")
@@ -334,9 +465,12 @@ def parse_excel_header(content: bytes, filename: str) -> List[str]:
             ws = wb.active
 
             # Read the first row (header)
-            for cell in next(ws.rows):
-                if cell.value and isinstance(cell.value, (str, int, float)):
-                    value = str(cell.value).strip()
+            # type: ignore[attr-defined]
+            first_row = next(ws.iter_rows(
+                min_row=1, max_row=1, values_only=True))
+            for cell_val in first_row:
+                if cell_val and isinstance(cell_val, (str, int, float)):
+                    value = str(cell_val).strip()
                     # Skip empty names and names > 70 chars
                     if value and len(value) <= 70:
                         header_names.append(value.lower().replace("_", " "))
@@ -372,26 +506,72 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename.lower())[1]
 
 
-def get_column_names(filetable_path: str, outpath: str = ".") -> str:
-    """Get dataset column names from ESS-DIVE for a list of data identifiers.
+def get_variable_names(filetable_path: str, results_path: Optional[str] = None, outpath: str = ".") -> str:
+    """Get dataset variable names from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
     as input.
 
-    Column names and keywords are streamed to an output file as they are collected.
+    Variable names and keywords are streamed to an output file as they are collected.
+    This also includes data dictionary contents if present for a given dataset.
 
     Args:
         filetable_path: Path to the filetable created by get_metadata
+        results_path: Path to the results file (TSV) - needed for dataset mapping
         outpath: Directory to write output file (defaults to current directory)
 
     Returns:
         Path to the column names output file
     """
     # Define the output file path
-    column_names_path = f"{outpath}/column_names.txt"
+    variable_names_path = f"{outpath}/variable_names.tsv"
 
-    # Initialize the column and keyword frequency dictionaries for tracking
+    # Initialize a compiled data dictionaries output
+    data_dict_compiled_path = f"{outpath}/data_dictionaries.tsv"
+    with open(data_dict_compiled_path, "w", newline="") as _dd_out:
+        dd_writer = csv.writer(_dd_out, delimiter="\t", lineterminator="\n")
+        dd_writer.writerow([
+            "dataset_id",
+            "source_filename",
+            "Column_or_Row_Name",
+            "Unit",
+            "Definition",
+            "Column_or_Row_Long_Name",
+            "Data_Type",
+            "Term_Type",
+            "Missing_value_code",
+        ])
+
+    # Initialize the column, keyword, and data dictionary frequency dictionaries for tracking
     column_frequencies = {}
     keyword_frequencies = {}
+
+    # Load dataset mapping if results file is provided
+    dataset_mapping = {}  # maps variable -> list of (dataset_id, dataset_name)
+    if results_path and os.path.exists(results_path):
+        try:
+            results_df = pl.read_csv(results_path, separator="\t")
+            for row in results_df.iter_rows(named=True):
+                dataset_id = row["id"]
+                dataset_name = row["name"]
+                variables_str = row.get("variables", "")
+                if variables_str:
+                    # Split pipe-delimited variables
+                    variables = [v.strip()
+                                 for v in variables_str.split("|") if v.strip()]
+                    for var in variables:
+                        if var not in dataset_mapping:
+                            dataset_mapping[var] = []
+                        dataset_mapping[var].append((dataset_id, dataset_name))
+        except Exception as e:
+            logger.warning(
+                f"Could not load results file for dataset mapping: {e}")
+            dataset_mapping = {}
+    data_dict_frequencies = {}
+    # Track definitions and units for variables from data dictionaries
+    variable_definitions = {}
+    variable_units = {}
+    # Track file descriptions from FLMD files
+    variable_file_descriptions = {}  # maps variable -> set of file descriptions
 
     # Load the file as a polars dataframe
     filetable = pl.read_csv(filetable_path, separator="\t")
@@ -420,16 +600,73 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
     # Get the set of entries that look like they are data dictionaries
     data_dict_files = filetable.filter(pl.col("name").str.contains("dd.csv$"))
 
-    # Remove data dict files and XML files from the tabular files to avoid duplication
+    # Get the set of entries that are FLMD (File Level Metadata) files
+    flmd_files = filetable.filter(
+        pl.col("name").str.to_lowercase().str.contains("flmd\\.csv$") |
+        pl.col("name").str.to_lowercase().str.contains("^flmd\\.csv$")
+    )
+
+    # Remove data dict files, XML files, and FLMD files from the tabular files to avoid duplication
     tab_data_files = tab_data_files.join(data_dict_files, on="url", how="anti")
     tab_data_files = tab_data_files.join(xml_files, on="url", how="anti")
+    tab_data_files = tab_data_files.join(flmd_files, on="url", how="anti")
 
     # Initialize the output file
-    with open(column_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
+    with open(variable_names_path, "w") as f:
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\tdataset\tdataset_name\tfile_description\n")
+
+    # First, process FLMD files to build file description mappings
+    dataset_file_descriptions = {}  # maps dataset_id -> {filename -> description}
+    if len(flmd_files) > 0:
+        logging.info(f"Processing {len(flmd_files)} FLMD files...")
+        for idx, row in enumerate(tqdm(flmd_files.iter_rows(named=True), desc="Processing FLMD files", unit="file", total=len(flmd_files))):
+            url = row["url"]
+            filename = row["name"]
+            dataset_id = row["dataset_id"]
+
+            try:
+                response = requests.get(url, headers=USER_HEADERS, verify=True)
+                if response.status_code == 200:
+                    try:
+                        # Try to decode the content
+                        try:
+                            response_text = response.content.decode('utf-8')
+                        except UnicodeDecodeError:
+                            try:
+                                response_text = response.content.decode(
+                                    'latin-1')
+                            except UnicodeDecodeError:
+                                response_text = response.content.decode(
+                                    'utf-8', errors='ignore')
+                                logger.warning(
+                                    f"Had to ignore encoding errors for FLMD file {url}")
+
+                        # Parse FLMD file
+                        file_desc_mapping = parse_flmd_file(response_text)
+                        if file_desc_mapping:
+                            if dataset_id not in dataset_file_descriptions:
+                                dataset_file_descriptions[dataset_id] = {}
+                            dataset_file_descriptions[dataset_id].update(
+                                file_desc_mapping)
+                            logger.debug(
+                                f"Found {len(file_desc_mapping)} file descriptions in {filename}")
+
+                    except Exception as e:
+                        errors["encoding_errors"].append(f"{url} ({str(e)})")
+                        logger.debug(
+                            f"Error processing FLMD file {filename}: {str(e)}")
+                        continue
+                else:
+                    errors["response_errors"].append(
+                        f"{url} (status code: {response.status_code})")
+                    continue
+
+            except Exception as e:
+                errors["failed_urls"].append(f"{url} ({str(e)})")
+                continue
 
     # Process files
-    file_count = len(tab_data_files) + len(data_dict_files) + len(xml_files)
+    file_count = len(tab_data_files) + len(xml_files)
     logging.info(f"Processing {file_count} files...")
 
     # First process XML files for keywords
@@ -477,12 +714,24 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
 
                         # If we found new keywords, append them to the file
                         if new_keywords:
-                            with open(column_names_path, "a") as f:
+                            with open(variable_names_path, "a") as f:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
-                                        # Keywords typically don't have units, so same value for both columns
+                                        # Keywords typically don't have units or definitions
+                                        # Get dataset info for this keyword (using sets to ensure uniqueness)
+                                        dataset_ids = set()
+                                        dataset_names = set()
+                                        if keyword in dataset_mapping:
+                                            for dataset_id, dataset_name in dataset_mapping[keyword]:
+                                                dataset_ids.add(dataset_id)
+                                                dataset_names.add(dataset_name)
+                                        dataset_ids_str = "|".join(
+                                            sorted(dataset_ids)) if dataset_ids else ""
+                                        dataset_names_str = "|".join(
+                                            sorted(dataset_names)) if dataset_names else ""
+                                        # Keywords don't have file descriptions
                                         f.write(
-                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\n")
+                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\t\t{dataset_ids_str}\t{dataset_names_str}\t\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -499,6 +748,8 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 continue
 
     # Now retrieve the column names, then the data dictionaries
+    # We will retain the data dictionaries
+    total_dd_rows = 0
     for i, fileset_name in enumerate([("data files", tab_data_files), ("data dictionaries", data_dict_files)]):
         name, fileset = fileset_name
 
@@ -537,8 +788,44 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                                         f"Had to ignore encoding errors for {url}")
 
                             if i == 1:  # Data dictionary
+                                # Append full DD content to compiled TSV
+                                try:
+                                    total_dd_rows += append_dd_content_to_file(
+                                        response_text,
+                                        row["dataset_id"],
+                                        filename,
+                                        data_dict_compiled_path,
+                                    )
+                                except Exception as e:
+                                    errors["encoding_errors"].append(
+                                        f"{url} ({str(e)})")
+                                    logger.debug(
+                                        f"Error parsing DD content for {filename}: {str(e)}")
+                                # Extract names and definitions for addition to the variable names list
                                 data_names = parse_data_dictionary(
                                     response_text)
+                                dd_definitions, dd_units = parse_dd_defs_units(
+                                    response_text)
+                                # Update variable definitions, combining multiple definitions with pipes (ensuring uniqueness)
+                                for var_name, definition in dd_definitions.items():
+                                    if var_name in variable_definitions:
+                                        existing_defs = set(
+                                            variable_definitions[var_name].split("|"))
+                                        existing_defs.add(definition)
+                                        variable_definitions[var_name] = "|".join(
+                                            sorted(existing_defs))
+                                    else:
+                                        variable_definitions[var_name] = definition
+                                # Update variable units, combining multiple units with pipes (ensuring uniqueness)
+                                for var_name, unit in dd_units.items():
+                                    if var_name in variable_units:
+                                        existing_units = set(
+                                            variable_units[var_name].split("|"))
+                                        existing_units.add(unit)
+                                        variable_units[var_name] = "|".join(
+                                            sorted(existing_units))
+                                    else:
+                                        variable_units[var_name] = unit
                             else:  # CSV file
                                 # For CSV, just get the header
                                 for line in response_text.splitlines():
@@ -559,23 +846,98 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                         # Normalize the column names
                         data_names = normalize_variables(data_names)
 
-                        # Update column frequencies
-                        new_columns = False
-                        for name in data_names:
-                            if name in column_frequencies:
-                                column_frequencies[name] += 1
-                            else:
-                                column_frequencies[name] = 1
-                                new_columns = True
+                        # Get file description for this file if available
+                        current_dataset_id = row["dataset_id"]
+                        current_filename = filename
+                        file_description = ""
+                        if (current_dataset_id in dataset_file_descriptions and
+                                current_filename in dataset_file_descriptions[current_dataset_id]):
+                            file_description = dataset_file_descriptions[current_dataset_id][current_filename]
 
-                        # If we found new columns, append them to the file
-                        if new_columns:
-                            with open(column_names_path, "a") as f:
-                                for column, freq in column_frequencies.items():
-                                    if freq == 1:  # Only write new columns
-                                        var_name, unit = extract_units(column)
-                                        f.write(
-                                            f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\n")
+                        # Update file descriptions for variables from this file
+                        if file_description:
+                            for var_name in data_names:
+                                if var_name not in variable_file_descriptions:
+                                    variable_file_descriptions[var_name] = set(
+                                    )
+                                variable_file_descriptions[var_name].add(
+                                    file_description)
+
+                        # Update frequencies based on source type
+                        if i == 1:  # Data dictionary
+                            new_data_dict_vars = False
+                            for name in data_names:
+                                if name in data_dict_frequencies:
+                                    data_dict_frequencies[name] += 1
+                                else:
+                                    data_dict_frequencies[name] = 1
+                                    new_data_dict_vars = True
+
+                            # If we found new data dictionary variables, append them to the file
+                            if new_data_dict_vars:
+                                with open(variable_names_path, "a") as f:
+                                    for dd_var, freq in data_dict_frequencies.items():
+                                        if freq == 1:  # Only write new variables
+                                            var_name, _ = extract_units(dd_var)
+                                            definition = variable_definitions.get(
+                                                dd_var, "")
+                                            units = variable_units.get(
+                                                dd_var, "")
+                                            # Get dataset info for this variable (using sets to ensure uniqueness)
+                                            dataset_ids = set()
+                                            dataset_names = set()
+                                            if dd_var in dataset_mapping:
+                                                for dataset_id, dataset_name in dataset_mapping[dd_var]:
+                                                    dataset_ids.add(dataset_id)
+                                                    dataset_names.add(
+                                                        dataset_name)
+                                            dataset_ids_str = "|".join(
+                                                sorted(dataset_ids)) if dataset_ids else ""
+                                            dataset_names_str = "|".join(
+                                                sorted(dataset_names)) if dataset_names else ""
+                                            # Get file descriptions for this variable
+                                            file_desc_set = variable_file_descriptions.get(
+                                                dd_var, set())
+                                            file_desc_str = "|".join(
+                                                sorted(file_desc_set)) if file_desc_set else ""
+                                            f.write(
+                                                f"{dd_var}\t{freq}\tdata_dictionary\t{var_name}\t{units}\t{definition}\t{dataset_ids_str}\t{dataset_names_str}\t{file_desc_str}\n")
+                        else:  # Regular data files
+                            new_columns = False
+                            for name in data_names:
+                                if name in column_frequencies:
+                                    column_frequencies[name] += 1
+                                else:
+                                    column_frequencies[name] = 1
+                                    new_columns = True
+
+                            # If we found new variables, append them to the file
+                            if new_columns:
+                                with open(variable_names_path, "a") as f:
+                                    for column, freq in column_frequencies.items():
+                                        if freq == 1:  # Only write new variables
+                                            var_name, unit = extract_units(
+                                                column)
+                                            # Columns don't have definitions or units from data dictionaries
+                                            # Get dataset info for this column (using sets to ensure uniqueness)
+                                            dataset_ids = set()
+                                            dataset_names = set()
+                                            if column in dataset_mapping:
+                                                for dataset_id, dataset_name in dataset_mapping[column]:
+                                                    dataset_ids.add(dataset_id)
+                                                    dataset_names.add(
+                                                        dataset_name)
+                                            dataset_ids_str = "|".join(
+                                                sorted(dataset_ids)) if dataset_ids else ""
+                                            dataset_names_str = "|".join(
+                                                sorted(dataset_names)) if dataset_names else ""
+                                            # Get file descriptions for this column
+                                            file_desc_set = variable_file_descriptions.get(
+                                                column, set())
+                                            file_desc_str = "|".join(
+                                                sorted(file_desc_set)) if file_desc_set else ""
+                                            f.write(
+                                                f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\t\t{dataset_ids_str}\t{dataset_names_str}\t{file_desc_str}\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -591,39 +953,74 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
                 continue
 
     # After processing all files, update the file with final frequencies
-    # First identify terms that appear in both columns and keywords and combine their sources
+    # First identify terms that appear in multiple sources and combine their sources
     # Create a dictionary to track combined term frequencies and sources
     all_terms = {}
 
-    # Process column terms first
-    for column, freq in column_frequencies.items():
-        # If this term also appears as a keyword, combine sources
-        if column in keyword_frequencies:
-            source = "column|keyword"
-            # Sum the frequencies from both sources
-            combined_freq = freq + keyword_frequencies[column]
-            all_terms[column] = (combined_freq, source)
-            # Mark this keyword as processed
-            keyword_frequencies[column] = -1  # Mark as already processed
-        else:
-            all_terms[column] = (freq, "column")
+    # Get all unique terms across all sources
+    all_unique_terms = set()
+    all_unique_terms.update(column_frequencies.keys())
+    all_unique_terms.update(keyword_frequencies.keys())
+    all_unique_terms.update(data_dict_frequencies.keys())
 
-    # Process remaining keywords (those not already combined with columns)
-    for keyword, freq in keyword_frequencies.items():
-        if freq > 0:  # Only process keywords that weren't already combined
-            all_terms[keyword] = (freq, "keyword")
+    # For each unique term, determine its sources and combined frequency
+    for term in all_unique_terms:
+        sources = []
+        total_freq = 0
+
+        if term in column_frequencies:
+            sources.append("column")
+            total_freq += column_frequencies[term]
+
+        if term in keyword_frequencies:
+            sources.append("keyword")
+            total_freq += keyword_frequencies[term]
+
+        if term in data_dict_frequencies:
+            sources.append("data_dictionary")
+            total_freq += data_dict_frequencies[term]
+
+        # Combine sources with pipe delimiter
+        combined_source = "|".join(sources)
+        all_terms[term] = (total_freq, combined_source)
 
     # Sort by frequency (highest first)
     sorted_terms = sorted(
         all_terms.items(), key=lambda item: item[1][0], reverse=True)
 
-    with open(column_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\tvariable_name\tunits\n")
+    with open(variable_names_path, "w") as f:
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\tdataset\tdataset_name\tfile_description\n")
         for term, (frequency, source) in sorted_terms:
-            var_name, unit = extract_units(term)
-            f.write(f"{term}\t{frequency}\t{source}\t{var_name}\t{unit}\n")
+            var_name, _ = extract_units(term)
+            definition = variable_definitions.get(term, "")
+            units = variable_units.get(term, "")
+
+            # Get dataset IDs and names for this variable (using sets to ensure uniqueness)
+            dataset_ids = set()
+            dataset_names = set()
+            if term in dataset_mapping:
+                for dataset_id, dataset_name in dataset_mapping[term]:
+                    dataset_ids.add(dataset_id)
+                    dataset_names.add(dataset_name)
+
+            # Join with pipes for multiple datasets (sorted for consistency)
+            dataset_ids_str = "|".join(
+                sorted(dataset_ids)) if dataset_ids else ""
+            dataset_names_str = "|".join(
+                sorted(dataset_names)) if dataset_names else ""
+
+            # Get file descriptions for this variable
+            file_desc_set = variable_file_descriptions.get(term, set())
+            file_desc_str = "|".join(
+                sorted(file_desc_set)) if file_desc_set else ""
+
+            f.write(
+                f"{term}\t{frequency}\t{source}\t{var_name}\t{units}\t{definition}\t{dataset_ids_str}\t{dataset_names_str}\t{file_desc_str}\n")
 
     # Log any errors that occurred during processing
+    if total_dd_rows:
+        logger.info(
+            f"Compiled {total_dd_rows} data dictionary rows into {data_dict_compiled_path}")
     if errors["response_errors"]:
         logger.error(
             f"Response errors for {len(errors['response_errors'])} URLs")
@@ -656,7 +1053,7 @@ def get_column_names(filetable_path: str, outpath: str = ".") -> str:
             logger.error(
                 f"  ...and {len(errors['unsupported_filetype']) - 5} more")
 
-    return column_names_path
+    return variable_names_path
 
 
 def normalize_variables(variables: list) -> list:
@@ -669,7 +1066,8 @@ def normalize_variables(variables: list) -> list:
     4. Converts to lowercase
     5. Replaces underscores with spaces
     6. Strips whitespace
-    7. Sorts the list
+    7. Filters out purely numeric names (e.g., "1234" or "123.45")
+    8. Sorts the list
     """
     normalized = []
     for var in variables:
@@ -693,8 +1091,8 @@ def normalize_variables(variables: list) -> list:
                 # Clean leading and trailing punctuation while preserving parentheses and brackets
                 v = clean_punctuation(v, preserve_brackets=True)
 
-                # Also enforce length limit
-                if v and v not in normalized and len(v) <= 70:
+                # Apply all filtering logic
+                if _is_valid_variable_name(v) and v not in normalized and len(v) <= 70:
                     normalized.append(v)
         else:
             var = var.lower().replace("_", " ").strip()
@@ -702,12 +1100,43 @@ def normalize_variables(variables: list) -> list:
             # Clean leading and trailing punctuation while preserving parentheses and brackets
             var = clean_punctuation(var, preserve_brackets=True)
 
-            # Also enforce length limit
-            if var and var not in normalized and len(var) <= 70:
+            # Apply all filtering logic
+            if _is_valid_variable_name(var) and var not in normalized and len(var) <= 70:
                 normalized.append(var)
 
     normalized.sort()
     return normalized
+
+
+def _is_valid_variable_name(name: str) -> bool:
+    """Check if a variable name is valid (not purely numeric, not empty, etc.)."""
+    if not name or not name.strip():
+        return False
+
+    clean_name = name.strip()
+
+    # Remove leading punctuation and non-alphanumeric characters
+    while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
+        clean_name = clean_name[1:]
+
+    if not clean_name:
+        return False
+
+    # Skip specific metadata terms (case-insensitive)
+    excluded_terms = {"n/a", "notes", "file_name", "header_rows", "data_type"}
+    if clean_name.lower().replace("_", " ").replace(" ", "_") in excluded_terms or \
+       clean_name.lower().replace("_", " ") in excluded_terms or \
+       clean_name.lower().replace(" ", "_") in excluded_terms:
+        return False
+
+    # Skip purely numeric names (integers or decimals)
+    try:
+        float(clean_name.replace(" ", ""))  # Remove spaces for number check
+        # If conversion succeeds, it's purely numeric - reject it
+        return False
+    except ValueError:
+        # If conversion fails, it contains non-numeric characters - keep it
+        return True
 
 
 def parse_header(header: str) -> list:
@@ -737,7 +1166,8 @@ def parse_header(header: str) -> list:
 
 def parse_data_dictionary(dd: str) -> list:
     """Parse a data dictionary.
-    Also normalizes and filters out excessively long column names (>70 chars)."""
+    Extracts variable names from the first column and applies normalize_variables
+    for consistent filtering and cleaning."""
     data_names = []
 
     # Clean Unicode special characters first
@@ -748,18 +1178,73 @@ def parse_data_dictionary(dd: str) -> list:
         if not row:  # Skip empty rows
             continue
         name = row[0]
-        # Skip headers and long names
-        if name not in ["", "Column_or_Row_Name"] and len(name) <= 70:
-            clean_name = clean_unicode_chars(
-                name.lower().replace("_", " ").strip())
+        # Skip headers and collect all non-empty names
+        if name not in ["", "Column_or_Row_Name"]:
+            data_names.append(name)
 
-            # Remove leading punctuation and non-alphanumeric characters
-            while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
-                clean_name = clean_name[1:]
+    # Apply consistent normalization (this will handle all filtering)
+    return normalize_variables(data_names)
 
-            if clean_name:  # Only add if not empty after cleaning
-                data_names.append(clean_name)
-    return data_names
+
+def parse_dd_defs_units(dd: str) -> tuple:
+    """Parse a data dictionary and extract variable names with their definitions and units.
+    Returns:
+        Tuple of two dicts: (definitions, units)
+        Each dict maps normalized variable names to their values (pipe-delimited if multiple).
+    """
+    var_definitions = {}
+    var_units = {}
+    dd = clean_unicode_chars(dd)
+    reader = csv.DictReader(StringIO(dd))
+    if not reader.fieldnames:
+        return var_definitions, var_units
+
+    # Find the definition and unit columns (case-insensitive)
+    definition_col = None
+    unit_col = None
+    for field in reader.fieldnames:
+        norm_field = _norm_header_key(field)
+        if norm_field == "definition":
+            definition_col = field
+        if norm_field == "unit":
+            unit_col = field
+    if not definition_col and not unit_col:
+        return var_definitions, var_units
+    for row in reader:
+        if not row:
+            continue
+
+        # First column is variable name
+        name = row.get(reader.fieldnames[0], "")
+        definition = row.get(definition_col, "") if definition_col else ""
+        unit = row.get(unit_col, "") if unit_col else ""
+        if name and name not in ["", "Column_or_Row_Name"]:
+            normalized_names = normalize_variables([name])
+            if normalized_names:
+                normalized_name = normalized_names[0]
+
+                # Get definitions
+                if definition and definition.strip():
+                    def_val = sanitize_tsv_field(definition.strip())
+                    if normalized_name in var_definitions:
+                        existing_defs = var_definitions[normalized_name].split(
+                            "|")
+                        if def_val not in existing_defs:
+                            var_definitions[normalized_name] += f"|{def_val}"
+                    else:
+                        var_definitions[normalized_name] = def_val
+
+                # Get units
+                if unit and unit.strip():
+                    unit_val = sanitize_tsv_field(unit.strip())
+                    if normalized_name in var_units:
+                        existing_units = var_units[normalized_name].split("|")
+                        if unit_val not in existing_units:
+                            var_units[normalized_name] += f"|{unit_val}"
+                    else:
+                        var_units[normalized_name] = unit_val
+
+    return var_definitions, var_units
 
 
 def parse_eml_keywords(content: str) -> List[str]:
