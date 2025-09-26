@@ -113,7 +113,16 @@ def get_essdive_variables(path, outpath):
             f"The specified output directory '{outpath}' does not exist.")
         sys.exit()
 
-    variable_names_path = get_variable_names(filetable_path, outpath)
+    # Look for results file in the same directory as the filetable
+    results_path = os.path.join(os.path.dirname(filetable_path), "results.txt")
+    if not os.path.exists(results_path):
+        # Try in the output directory if not found with filetable
+        results_path = os.path.join(outpath, "results.txt")
+        if not os.path.exists(results_path):
+            logging.warning("Results file not found. Dataset mapping will not be available.")
+            results_path = None
+
+    variable_names_path = get_variable_names(filetable_path, results_path, outpath)
 
     logging.info(f"Variable names and keywords written to {variable_names_path}")
 

@@ -11,7 +11,7 @@ import string
 import os
 import tempfile
 import re
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import csv
 import logging
 import polars as pl
@@ -461,7 +461,7 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename.lower())[1]
 
 
-def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
+def get_variable_names(filetable_path: str, results_path: Optional[str] = None, outpath: str = ".") -> str:
     """Get dataset variable names from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
     as input.
@@ -471,6 +471,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
 
     Args:
         filetable_path: Path to the filetable created by get_metadata
+        results_path: Path to the results file (TSV) - needed for dataset mapping
         outpath: Directory to write output file (defaults to current directory)
 
     Returns:
@@ -498,6 +499,26 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
     # Initialize the column, keyword, and data dictionary frequency dictionaries for tracking
     column_frequencies = {}
     keyword_frequencies = {}
+    
+    # Load dataset mapping if results file is provided
+    dataset_mapping = {}  # maps variable -> list of (dataset_id, dataset_name)
+    if results_path and os.path.exists(results_path):
+        try:
+            results_df = pl.read_csv(results_path, separator="\t")
+            for row in results_df.iter_rows(named=True):
+                dataset_id = row["id"]
+                dataset_name = row["name"]
+                variables_str = row.get("variables", "")
+                if variables_str:
+                    # Split pipe-delimited variables
+                    variables = [v.strip() for v in variables_str.split("|") if v.strip()]
+                    for var in variables:
+                        if var not in dataset_mapping:
+                            dataset_mapping[var] = []
+                        dataset_mapping[var].append((dataset_id, dataset_name))
+        except Exception as e:
+            logger.warning(f"Could not load results file for dataset mapping: {e}")
+            dataset_mapping = {}
     data_dict_frequencies = {}
     # Track definitions and units for variables from data dictionaries
     variable_definitions = {}
@@ -536,7 +557,7 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
 
     # Initialize the output file
     with open(variable_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\n")
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\tdataset\tdataset_name\n")
 
     # Process files
     file_count = len(tab_data_files) + len(xml_files)
@@ -591,8 +612,17 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                 for keyword, freq in keyword_frequencies.items():
                                     if freq == 1:  # Only write new keywords
                                         # Keywords typically don't have units or definitions
+                                        # Get dataset info for this keyword (using sets to ensure uniqueness)
+                                        dataset_ids = set()
+                                        dataset_names = set()
+                                        if keyword in dataset_mapping:
+                                            for dataset_id, dataset_name in dataset_mapping[keyword]:
+                                                dataset_ids.add(dataset_id)
+                                                dataset_names.add(dataset_name)
+                                        dataset_ids_str = "|".join(sorted(dataset_ids)) if dataset_ids else ""
+                                        dataset_names_str = "|".join(sorted(dataset_names)) if dataset_names else ""
                                         f.write(
-                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\t\n")
+                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\t\t{dataset_ids_str}\t{dataset_names_str}\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -667,22 +697,20 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                     response_text)
                                 dd_definitions, dd_units = parse_dd_defs_units(
                                     response_text)
-                                # Update variable definitions, combining multiple definitions with pipes
+                                # Update variable definitions, combining multiple definitions with pipes (ensuring uniqueness)
                                 for var_name, definition in dd_definitions.items():
                                     if var_name in variable_definitions:
-                                        existing_defs = variable_definitions[var_name].split(
-                                            "|")
-                                        if definition not in existing_defs:
-                                            variable_definitions[var_name] += f"|{definition}"
+                                        existing_defs = set(variable_definitions[var_name].split("|"))
+                                        existing_defs.add(definition)
+                                        variable_definitions[var_name] = "|".join(sorted(existing_defs))
                                     else:
                                         variable_definitions[var_name] = definition
-                                # Update variable units, combining multiple units with pipes
+                                # Update variable units, combining multiple units with pipes (ensuring uniqueness)
                                 for var_name, unit in dd_units.items():
                                     if var_name in variable_units:
-                                        existing_units = variable_units[var_name].split(
-                                            "|")
-                                        if unit not in existing_units:
-                                            variable_units[var_name] += f"|{unit}"
+                                        existing_units = set(variable_units[var_name].split("|"))
+                                        existing_units.add(unit)
+                                        variable_units[var_name] = "|".join(sorted(existing_units))
                                     else:
                                         variable_units[var_name] = unit
                             else:  # CSV file
@@ -725,8 +753,17 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                                 dd_var, "")
                                             units = variable_units.get(
                                                 dd_var, "")
+                                            # Get dataset info for this variable (using sets to ensure uniqueness)
+                                            dataset_ids = set()
+                                            dataset_names = set()
+                                            if dd_var in dataset_mapping:
+                                                for dataset_id, dataset_name in dataset_mapping[dd_var]:
+                                                    dataset_ids.add(dataset_id)
+                                                    dataset_names.add(dataset_name)
+                                            dataset_ids_str = "|".join(sorted(dataset_ids)) if dataset_ids else ""
+                                            dataset_names_str = "|".join(sorted(dataset_names)) if dataset_names else ""
                                             f.write(
-                                                f"{dd_var}\t{freq}\tdata_dictionary\t{var_name}\t{units}\t{definition}\n")
+                                                f"{dd_var}\t{freq}\tdata_dictionary\t{var_name}\t{units}\t{definition}\t{dataset_ids_str}\t{dataset_names_str}\n")
                         else:  # Regular data files
                             new_columns = False
                             for name in data_names:
@@ -744,8 +781,17 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
                                             var_name, unit = extract_units(
                                                 column)
                                             # Columns don't have definitions or units from data dictionaries
+                                            # Get dataset info for this column (using sets to ensure uniqueness)
+                                            dataset_ids = set()
+                                            dataset_names = set()
+                                            if column in dataset_mapping:
+                                                for dataset_id, dataset_name in dataset_mapping[column]:
+                                                    dataset_ids.add(dataset_id)
+                                                    dataset_names.add(dataset_name)
+                                            dataset_ids_str = "|".join(sorted(dataset_ids)) if dataset_ids else ""
+                                            dataset_names_str = "|".join(sorted(dataset_names)) if dataset_names else ""
                                             f.write(
-                                                f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\t\n")
+                                                f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\t\t{dataset_ids_str}\t{dataset_names_str}\n")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
@@ -797,13 +843,26 @@ def get_variable_names(filetable_path: str, outpath: str = ".") -> str:
         all_terms.items(), key=lambda item: item[1][0], reverse=True)
 
     with open(variable_names_path, "w") as f:
-        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\n")
+        f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\tdataset\tdataset_name\n")
         for term, (frequency, source) in sorted_terms:
             var_name, _ = extract_units(term)
             definition = variable_definitions.get(term, "")
             units = variable_units.get(term, "")
+            
+            # Get dataset IDs and names for this variable (using sets to ensure uniqueness)
+            dataset_ids = set()
+            dataset_names = set()
+            if term in dataset_mapping:
+                for dataset_id, dataset_name in dataset_mapping[term]:
+                    dataset_ids.add(dataset_id)
+                    dataset_names.add(dataset_name)
+            
+            # Join with pipes for multiple datasets (sorted for consistency)
+            dataset_ids_str = "|".join(sorted(dataset_ids)) if dataset_ids else ""
+            dataset_names_str = "|".join(sorted(dataset_names)) if dataset_names else ""
+            
             f.write(
-                f"{term}\t{frequency}\t{source}\t{var_name}\t{units}\t{definition}\n")
+                f"{term}\t{frequency}\t{source}\t{var_name}\t{units}\t{definition}\t{dataset_ids_str}\t{dataset_names_str}\n")
 
     # Log any errors that occurred during processing
     if total_dd_rows:
