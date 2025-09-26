@@ -886,7 +886,8 @@ def parse_header(header: str) -> list:
 def parse_data_dictionary(dd: str) -> list:
     """Parse a data dictionary.
     Also normalizes and filters out excessively long column names (>70 chars),
-    avoids common metadata markers, and omits very un-variable-like entries."""
+    avoids common metadata markers, and omits very un-variable-like entries.
+    Excludes purely numeric variable names (e.g., "1234" or "123.45")."""
     data_names = []
 
     # Clean Unicode special characters first
@@ -907,7 +908,15 @@ def parse_data_dictionary(dd: str) -> list:
                 clean_name = clean_name[1:]
 
             if clean_name:  # Only add if not empty after cleaning
-                data_names.append(clean_name)
+                # Skip purely numeric names (integers or decimals)
+                # Check if the name is purely numeric by trying to convert to float
+                try:
+                    float(clean_name.replace(" ", ""))  # Remove spaces for number check
+                    # If conversion succeeds, it's purely numeric - skip it!
+                    continue
+                except ValueError:
+                    # If conversion fails, it contains non-numeric characters - keep it!
+                    data_names.append(clean_name)
     return data_names
 
 
