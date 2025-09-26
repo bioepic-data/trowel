@@ -127,6 +127,13 @@ def append_dd_content_to_file(content: str, dataset_id: str, source_filename: st
             if name_norm in metadata_markers:
                 continue
 
+            # Apply variable name validation to the Column_or_Row_Name
+            if name_val:
+                # Use normalize_variables to check if this is a valid variable name
+                normalized_names = normalize_variables([name_val])
+                if not normalized_names:  # If normalization filtered it out, skip this row
+                    continue
+
             # Collect canonical values
             canon_vals = []
             for col in canonical_columns:
@@ -817,7 +824,8 @@ def normalize_variables(variables: list) -> list:
     4. Converts to lowercase
     5. Replaces underscores with spaces
     6. Strips whitespace
-    7. Sorts the list
+    7. Filters out purely numeric names (e.g., "1234" or "123.45")
+    8. Sorts the list
     """
     normalized = []
     for var in variables:
@@ -841,8 +849,8 @@ def normalize_variables(variables: list) -> list:
                 # Clean leading and trailing punctuation while preserving parentheses and brackets
                 v = clean_punctuation(v, preserve_brackets=True)
 
-                # Also enforce length limit
-                if v and v not in normalized and len(v) <= 70:
+                # Apply all filtering logic
+                if _is_valid_variable_name(v) and v not in normalized and len(v) <= 70:
                     normalized.append(v)
         else:
             var = var.lower().replace("_", " ").strip()
@@ -850,12 +858,36 @@ def normalize_variables(variables: list) -> list:
             # Clean leading and trailing punctuation while preserving parentheses and brackets
             var = clean_punctuation(var, preserve_brackets=True)
 
-            # Also enforce length limit
-            if var and var not in normalized and len(var) <= 70:
+            # Apply all filtering logic
+            if _is_valid_variable_name(var) and var not in normalized and len(var) <= 70:
                 normalized.append(var)
 
     normalized.sort()
     return normalized
+
+
+def _is_valid_variable_name(name: str) -> bool:
+    """Check if a variable name is valid (not purely numeric, not empty, etc.)."""
+    if not name or not name.strip():
+        return False
+    
+    clean_name = name.strip()
+    
+    # Remove leading punctuation and non-alphanumeric characters
+    while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
+        clean_name = clean_name[1:]
+    
+    if not clean_name:
+        return False
+    
+    # Skip purely numeric names (integers or decimals)
+    try:
+        float(clean_name.replace(" ", ""))  # Remove spaces for number check
+        # If conversion succeeds, it's purely numeric - reject it
+        return False
+    except ValueError:
+        # If conversion fails, it contains non-numeric characters - keep it
+        return True
 
 
 def parse_header(header: str) -> list:
@@ -885,9 +917,8 @@ def parse_header(header: str) -> list:
 
 def parse_data_dictionary(dd: str) -> list:
     """Parse a data dictionary.
-    Also normalizes and filters out excessively long column names (>70 chars),
-    avoids common metadata markers, and omits very un-variable-like entries.
-    Excludes purely numeric variable names (e.g., "1234" or "123.45")."""
+    Extracts variable names from the first column and applies normalize_variables
+    for consistent filtering and cleaning."""
     data_names = []
 
     # Clean Unicode special characters first
@@ -898,27 +929,12 @@ def parse_data_dictionary(dd: str) -> list:
         if not row:  # Skip empty rows
             continue
         name = row[0]
-        # Skip headers and long names
-        if name not in ["", "Column_or_Row_Name"] and len(name) <= 70:
-            clean_name = clean_unicode_chars(
-                name.lower().replace("_", " ").strip())
-
-            # Remove leading punctuation and non-alphanumeric characters
-            while clean_name and (clean_name[0] in string.punctuation or not clean_name[0].isalnum()):
-                clean_name = clean_name[1:]
-
-            if clean_name:  # Only add if not empty after cleaning
-                # Skip purely numeric names (integers or decimals)
-                # Check if the name is purely numeric by trying to convert to float
-                try:
-                    # Remove spaces for number check
-                    float(clean_name.replace(" ", ""))
-                    # If conversion succeeds, it's purely numeric - skip it!
-                    continue
-                except ValueError:
-                    # If conversion fails, it contains non-numeric characters - keep it!
-                    data_names.append(clean_name)
-    return data_names
+        # Skip headers and collect all non-empty names
+        if name not in ["", "Column_or_Row_Name"]:
+            data_names.append(name)
+    
+    # Apply consistent normalization (this will handle all filtering)
+    return normalize_variables(data_names)
 
 
 def parse_eml_keywords(content: str) -> List[str]:
