@@ -2,9 +2,6 @@
 
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
-# TODO: fix frequency counting as some variables are definitely
-# getting counted multiple times.
-
 from io import StringIO
 import sys
 import string
@@ -14,6 +11,7 @@ import re
 from typing import Tuple, List, Optional
 import csv
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import polars as pl
 import requests
 import xml.etree.ElementTree as ET
@@ -506,7 +504,269 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename.lower())[1]
 
 
-def get_variable_names(filetable_path: str, results_path: Optional[str] = None, outpath: str = ".") -> str:
+def _process_flmd_file(row_dict: dict) -> tuple:
+    """Process a single FLMD file and return results.
+
+    Args:
+        row_dict: Dictionary containing url, name, and dataset_id
+
+    Returns:
+        Tuple of (dataset_id, file_desc_mapping, error_type, error_msg)
+    """
+    url = row_dict["url"]
+    filename = row_dict["name"]
+    dataset_id = row_dict["dataset_id"]
+
+    try:
+        response = requests.get(
+            url, headers=USER_HEADERS, verify=True, timeout=30)
+        if response.status_code == 200:
+            try:
+                # Try to decode the content
+                try:
+                    response_text = response.content.decode('utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        response_text = response.content.decode('latin-1')
+                    except UnicodeDecodeError:
+                        response_text = response.content.decode(
+                            'utf-8', errors='ignore')
+                        logger.warning(
+                            f"Had to ignore encoding errors for FLMD file {url}")
+
+                # Parse FLMD file
+                file_desc_mapping = parse_flmd_file(response_text)
+                return (dataset_id, file_desc_mapping, None, None)
+
+            except Exception as e:
+                return (dataset_id, None, "encoding_errors", f"{url} ({str(e)})")
+        else:
+            return (dataset_id, None, "response_errors", f"{url} (status code: {response.status_code})")
+
+    except Exception as e:
+        return (dataset_id, None, "failed_urls", f"{url} ({str(e)})")
+
+
+def _process_xml_file(row_dict: dict, dataset_id_to_name: dict) -> tuple:
+    """Process a single XML file for keywords and return results.
+
+    Args:
+        row_dict: Dictionary containing url, name, and dataset_id
+        dataset_id_to_name: Mapping of dataset IDs to names
+
+    Returns:
+        Tuple of (keywords_list, dataset_id, dataset_name, error_type, error_msg)
+    """
+    url = row_dict["url"]
+    filename = row_dict["name"]
+    dataset_id = row_dict["dataset_id"]
+    dataset_name = dataset_id_to_name.get(dataset_id, "")
+
+    try:
+        response = requests.get(
+            url, headers=USER_HEADERS, verify=True, timeout=30)
+        if response.status_code == 200:
+            try:
+                # Try to decode the content
+                try:
+                    response_text = response.content.decode('utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        response_text = response.content.decode('latin-1')
+                    except UnicodeDecodeError:
+                        response_text = response.content.decode(
+                            'utf-8', errors='ignore')
+                        logger.warning(
+                            f"Had to ignore encoding errors for {url}")
+
+                # Extract keywords from the XML
+                keywords = parse_eml_keywords(response_text)
+                # Normalize keywords
+                keywords = normalize_variables(keywords)
+
+                return (keywords, dataset_id, dataset_name, None, None)
+
+            except Exception as e:
+                return (None, dataset_id, dataset_name, "encoding_errors", f"{url} ({str(e)})")
+        else:
+            return (None, dataset_id, dataset_name, "response_errors", f"{url} (status code: {response.status_code})")
+
+    except Exception as e:
+        return (None, dataset_id, dataset_name, "failed_urls", f"{url} ({str(e)})")
+
+
+def _process_data_file(row_dict: dict, dataset_id_to_name: dict, dataset_file_descriptions: dict,
+                       is_data_dict: bool) -> tuple:
+    """Process a single data file or data dictionary and return results.
+
+    Args:
+        row_dict: Dictionary containing url, name, and dataset_id
+        dataset_id_to_name: Mapping of dataset IDs to names
+        dataset_file_descriptions: Mapping of dataset_id -> {filename -> description}
+        is_data_dict: Whether this is a data dictionary file
+
+    Returns:
+        Tuple of (data_names, dataset_id, dataset_name, file_description, dd_content_rows,
+                  variable_defs, variable_units, error_type, error_msg)
+    """
+    url = row_dict["url"]
+    filename = row_dict["name"]
+    dataset_id = row_dict["dataset_id"]
+    dataset_name = dataset_id_to_name.get(dataset_id, "")
+    file_ext = get_file_extension(filename)
+
+    # Get file description
+    file_description = ""
+    if dataset_id in dataset_file_descriptions and filename in dataset_file_descriptions[dataset_id]:
+        file_description = dataset_file_descriptions[dataset_id][filename]
+
+    try:
+        stream = file_ext not in [".xls", ".xlsx"]
+        response = requests.get(url, headers=USER_HEADERS,
+                                verify=True, stream=stream, timeout=30)
+
+        if response.status_code == 200:
+            try:
+                data_names = []
+                dd_content_rows = []
+                variable_defs = {}
+                variable_units = {}
+
+                # Process the file based on its type
+                if is_data_dict or file_ext in [".csv", ".txt", ".tsv"]:
+                    content = response.content
+
+                    # Try to decode
+                    try:
+                        response_text = content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        try:
+                            response_text = content.decode('latin-1')
+                        except UnicodeDecodeError:
+                            response_text = content.decode(
+                                'utf-8', errors='ignore')
+                            logger.warning(
+                                f"Had to ignore encoding errors for {url}")
+
+                    if is_data_dict:
+                        # Extract DD content rows for compilation
+                        try:
+                            dd_content_rows = _extract_dd_content_rows(
+                                response_text, dataset_id, filename)
+                        except Exception as e:
+                            logger.debug(
+                                f"Error parsing DD content for {filename}: {str(e)}")
+
+                        # Extract names and definitions
+                        data_names = parse_data_dictionary(response_text)
+                        variable_defs, variable_units = parse_dd_defs_units(
+                            response_text)
+                    else:
+                        # For CSV, just get the header
+                        for line in response_text.splitlines():
+                            if line.strip():
+                                data_names = parse_header(line)
+                                break
+
+                elif file_ext in [".xlsx", ".xls"]:
+                    content = response.content
+                    data_names = parse_excel_header(content, filename)
+                else:
+                    return (None, dataset_id, dataset_name, file_description, None, None, None,
+                            "unsupported_filetype", f"{url} (filetype: {file_ext})")
+
+                # Normalize the column names
+                data_names = normalize_variables(data_names)
+
+                return (data_names, dataset_id, dataset_name, file_description, dd_content_rows,
+                        variable_defs, variable_units, None, None)
+
+            except Exception as e:
+                return (None, dataset_id, dataset_name, file_description, None, None, None,
+                        "encoding_errors", f"{url} ({str(e)})")
+        else:
+            return (None, dataset_id, dataset_name, file_description, None, None, None,
+                    "response_errors", f"{url} (status code: {response.status_code})")
+
+    except Exception as e:
+        return (None, dataset_id, dataset_name, file_description, None, None, None,
+                "failed_urls", f"{url} ({str(e)})")
+
+
+def _extract_dd_content_rows(response_text: str, dataset_id: str, filename: str) -> list:
+    """Extract data dictionary content rows for compilation.
+    Sanitizes all fields and applies the same filtering logic as append_dd_content_to_file."""
+    canonical_columns = [
+        "Column_or_Row_Name",
+        "Unit",
+        "Definition",
+        "Column_or_Row_Long_Name",
+        "Data_Type",
+        "Term_Type",
+        "Missing_Value_Code",
+    ]
+    canonical_norm_map = {
+        "columnorrowname": "Column_or_Row_Name",
+        "unit": "Unit",
+        "definition": "Definition",
+        "columnorrowlongname": "Column_or_Row_Long_Name",
+        "datatype": "Data_Type",
+        "termtype": "Term_Type",
+        "missingvaluecode": "Missing_Value_Code",
+    }
+
+    reader = csv.DictReader(StringIO(response_text))
+    if not reader.fieldnames:
+        return []
+
+    # Map canonical column -> actual header in this file (if present)
+    source_map = {}
+    for field in reader.fieldnames:
+        norm = _norm_header_key(field)
+        if norm in canonical_norm_map and canonical_norm_map[norm] not in source_map:
+            source_map[canonical_norm_map[norm]] = field
+
+    rows = []
+    # Row value markers to exclude (normalized)
+    metadata_markers = {"columnorrowname", "filedescription",
+                        "missingvaluecodes", "missingvaluecode"}
+
+    for row in reader:
+        # Determine if this row is a metadata row we should skip
+        name_src = source_map.get("Column_or_Row_Name")
+        name_val = row.get(name_src, "") if name_src else ""
+        name_norm = _norm_header_key(
+            sanitize_tsv_field(name_val)) if name_val else ""
+        if name_norm in metadata_markers:
+            continue
+
+        # Apply variable name validation to the Column_or_Row_Name
+        if name_val:
+            # Use normalize_variables to check if this is a valid variable name
+            normalized_names = normalize_variables([name_val])
+            if not normalized_names:  # If normalization filtered it out, skip this row
+                continue
+
+        # Collect canonical values
+        canon_vals = []
+        for col in canonical_columns:
+            src = source_map.get(col)
+            val = row.get(src, "") if src else ""
+            canon_vals.append(sanitize_tsv_field(val))
+
+        # Skip completely empty rows across canonical fields
+        if not any(canon_vals):
+            continue
+
+        out_vals = [sanitize_tsv_field(
+            dataset_id), sanitize_tsv_field(filename)] + canon_vals
+        rows.append(out_vals)
+
+    return rows
+
+
+def get_variable_names(filetable_path: str, results_path: Optional[str] = None, outpath: str = ".",
+                       max_workers: int = 10) -> str:
     """Get dataset variable names from ESS-DIVE for a list of data identifiers.
     Takes the name/path of the table, as produced by get_metadata,
     as input.
@@ -518,6 +778,7 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
         filetable_path: Path to the filetable created by get_metadata
         results_path: Path to the results file (TSV) - needed for dataset mapping
         outpath: Directory to write output file (defaults to current directory)
+        max_workers: Maximum number of parallel workers for file processing (default: 10)
 
     Returns:
         Path to the column names output file
@@ -547,12 +808,17 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
 
     # Load dataset mapping if results file is provided
     dataset_mapping = {}  # maps variable -> list of (dataset_id, dataset_name)
+    dataset_id_to_name = {}  # maps dataset_id -> dataset_name
     if results_path and os.path.exists(results_path):
         try:
             results_df = pl.read_csv(results_path, separator="\t")
             for row in results_df.iter_rows(named=True):
                 dataset_id = row["id"]
                 dataset_name = row["name"]
+
+                # Build dataset_id to dataset_name mapping
+                dataset_id_to_name[dataset_id] = dataset_name
+
                 variables_str = row.get("variables", "")
                 if variables_str:
                     # Split pipe-delimited variables
@@ -566,6 +832,7 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
             logger.warning(
                 f"Could not load results file for dataset mapping: {e}")
             dataset_mapping = {}
+            dataset_id_to_name = {}
     data_dict_frequencies = {}
     # Track definitions and units for variables from data dictionaries
     variable_definitions = {}
@@ -615,246 +882,111 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
     with open(variable_names_path, "w") as f:
         f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\tdataset\tdataset_name\tfile_description\n")
 
+    # Track variables found in each dataset (discovered during file processing)
+    # maps variable -> set of (dataset_id, dataset_name) tuples
+    variable_to_datasets = {}
+
     # First, process FLMD files to build file description mappings
     dataset_file_descriptions = {}  # maps dataset_id -> {filename -> description}
     if len(flmd_files) > 0:
-        logging.info(f"Processing {len(flmd_files)} FLMD files...")
-        for idx, row in enumerate(tqdm(flmd_files.iter_rows(named=True), desc="Processing FLMD files", unit="file", total=len(flmd_files))):
-            url = row["url"]
-            filename = row["name"]
-            dataset_id = row["dataset_id"]
+        logging.info(
+            f"Processing {len(flmd_files)} FLMD files with {max_workers} workers...")
 
-            try:
-                response = requests.get(url, headers=USER_HEADERS, verify=True)
-                if response.status_code == 200:
-                    try:
-                        # Try to decode the content
-                        try:
-                            response_text = response.content.decode('utf-8')
-                        except UnicodeDecodeError:
-                            try:
-                                response_text = response.content.decode(
-                                    'latin-1')
-                            except UnicodeDecodeError:
-                                response_text = response.content.decode(
-                                    'utf-8', errors='ignore')
-                                logger.warning(
-                                    f"Had to ignore encoding errors for FLMD file {url}")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all FLMD file processing jobs
+            future_to_row = {
+                executor.submit(_process_flmd_file, row): row
+                for row in flmd_files.iter_rows(named=True)
+            }
 
-                        # Parse FLMD file
-                        file_desc_mapping = parse_flmd_file(response_text)
-                        if file_desc_mapping:
-                            if dataset_id not in dataset_file_descriptions:
-                                dataset_file_descriptions[dataset_id] = {}
-                            dataset_file_descriptions[dataset_id].update(
-                                file_desc_mapping)
-                            logger.debug(
-                                f"Found {len(file_desc_mapping)} file descriptions in {filename}")
+            # Process completed tasks with progress bar
+            with tqdm(total=len(flmd_files), desc="Processing FLMD files", unit="file") as pbar:
+                for future in as_completed(future_to_row):
+                    dataset_id, file_desc_mapping, error_type, error_msg = future.result()
 
-                    except Exception as e:
-                        errors["encoding_errors"].append(f"{url} ({str(e)})")
-                        logger.debug(
-                            f"Error processing FLMD file {filename}: {str(e)}")
-                        continue
-                else:
-                    errors["response_errors"].append(
-                        f"{url} (status code: {response.status_code})")
-                    continue
+                    if error_type:
+                        errors[error_type].append(error_msg)
+                    elif file_desc_mapping:
+                        if dataset_id not in dataset_file_descriptions:
+                            dataset_file_descriptions[dataset_id] = {}
+                        dataset_file_descriptions[dataset_id].update(
+                            file_desc_mapping)
 
-            except Exception as e:
-                errors["failed_urls"].append(f"{url} ({str(e)})")
-                continue
+                    pbar.update(1)
 
     # Process files
     file_count = len(tab_data_files) + len(xml_files)
-    logging.info(f"Processing {file_count} files...")
+    logging.info(
+        f"Processing {file_count} files with {max_workers} workers...")
 
     # First process XML files for keywords
     if len(xml_files) > 0:
-        for idx, row in enumerate(tqdm(xml_files.iter_rows(named=True), desc="Processing XML files", unit="file", total=len(xml_files))):
-            url = row["url"]
-            filename = row["name"]
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all XML file processing jobs
+            future_to_row = {
+                executor.submit(_process_xml_file, row, dataset_id_to_name): row
+                for row in xml_files.iter_rows(named=True)
+            }
 
-            try:
-                response = requests.get(url, headers=USER_HEADERS, verify=True)
-                status_code = response.status_code
+            # Process completed tasks with progress bar
+            with tqdm(total=len(xml_files), desc="Processing XML files", unit="file") as pbar:
+                for future in as_completed(future_to_row):
+                    keywords, dataset_id, dataset_name, error_type, error_msg = future.result()
 
-                if (status_code == 200):
-                    try:
-                        # Try to decode the content as UTF-8
-                        try:
-                            response_text = response.content.decode('utf-8')
-                        except UnicodeDecodeError:
-                            # If UTF-8 fails, try another common encoding
-                            try:
-                                response_text = response.content.decode(
-                                    'latin-1')
-                            except UnicodeDecodeError:
-                                # Last resort, ignore errors
-                                response_text = response.content.decode(
-                                    'utf-8', errors='ignore')
-                                logger.warning(
-                                    f"Had to ignore encoding errors for {url}")
-
-                        # Extract keywords from the XML
-                        keywords = parse_eml_keywords(response_text)
-
-                        # Normalize keywords
-                        # We'll treat them like variables though
-                        keywords = normalize_variables(keywords)
-
-                        # Update keyword frequencies
-                        new_keywords = False
+                    if error_type:
+                        errors[error_type].append(error_msg)
+                    elif keywords:
+                        # Track dataset association for these keywords
                         for keyword in keywords:
+                            if keyword not in variable_to_datasets:
+                                variable_to_datasets[keyword] = set()
+                            variable_to_datasets[keyword].add(
+                                (dataset_id, dataset_name))
+
+                            # Update keyword frequencies
                             if keyword in keyword_frequencies:
                                 keyword_frequencies[keyword] += 1
                             else:
                                 keyword_frequencies[keyword] = 1
-                                new_keywords = True
 
-                        # If we found new keywords, append them to the file
-                        if new_keywords:
-                            with open(variable_names_path, "a") as f:
-                                for keyword, freq in keyword_frequencies.items():
-                                    if freq == 1:  # Only write new keywords
-                                        # Keywords typically don't have units or definitions
-                                        # Get dataset info for this keyword (using sets to ensure uniqueness)
-                                        dataset_ids = set()
-                                        dataset_names = set()
-                                        if keyword in dataset_mapping:
-                                            for dataset_id, dataset_name in dataset_mapping[keyword]:
-                                                dataset_ids.add(dataset_id)
-                                                dataset_names.add(dataset_name)
-                                        dataset_ids_str = "|".join(
-                                            sorted(dataset_ids)) if dataset_ids else ""
-                                        dataset_names_str = "|".join(
-                                            sorted(dataset_names)) if dataset_names else ""
-                                        # Keywords don't have file descriptions
-                                        f.write(
-                                            f"{keyword}\t{freq}\tkeyword\t{keyword}\t\t\t{dataset_ids_str}\t{dataset_names_str}\t\n")
-
-                    except Exception as e:
-                        errors["encoding_errors"].append(f"{url} ({str(e)})")
-                        logger.debug(
-                            f"Error processing XML file {filename}: {str(e)}")
-                        continue
-                else:
-                    errors["response_errors"].append(
-                        f"{url} (status code: {response.status_code})")
-                    continue
-
-            except Exception as e:
-                errors["failed_urls"].append(f"{url} ({str(e)})")
-                continue
+                    pbar.update(1)
 
     # Now retrieve the column names, then the data dictionaries
     # We will retain the data dictionaries
     total_dd_rows = 0
     for i, fileset_name in enumerate([("data files", tab_data_files), ("data dictionaries", data_dict_files)]):
         name, fileset = fileset_name
+        is_data_dict = (i == 1)
 
-        for idx, row in enumerate(tqdm(fileset.iter_rows(named=True), desc=f"Processing {name}", unit="file", total=len(fileset))):
-            url = row["url"]
-            filename = row["name"]
-            file_ext = get_file_extension(filename)
+        if len(fileset) == 0:
+            continue
 
-            try:
-                response = requests.get(
-                    url, headers=USER_HEADERS, verify=True, stream=True if file_ext not in [".xls", ".xlsx"] else False
-                )
-                status_code = response.status_code
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all file processing jobs
+            future_to_row = {
+                executor.submit(_process_data_file, row, dataset_id_to_name,
+                                dataset_file_descriptions, is_data_dict): row
+                for row in fileset.iter_rows(named=True)
+            }
 
-                if status_code == 200:
-                    try:
-                        data_names = []
+            # Process completed tasks with progress bar
+            with tqdm(total=len(fileset), desc=f"Processing {name}", unit="file") as pbar:
+                for future in as_completed(future_to_row):
+                    result = future.result()
+                    data_names, dataset_id, dataset_name, file_description, dd_content_rows, \
+                        var_defs, var_units, error_type, error_msg = result
 
-                        # Process the file based on its type
-                        if i == 1 or file_ext == ".csv" or file_ext == ".txt" or file_ext == ".tsv":
-                            # Data dictionary or CSV-like file
-                            content = response.content
+                    if error_type:
+                        errors[error_type].append(error_msg)
+                    elif data_names:
+                        # Track dataset association for these variables
+                        for var_name in data_names:
+                            if var_name not in variable_to_datasets:
+                                variable_to_datasets[var_name] = set()
+                            variable_to_datasets[var_name].add(
+                                (dataset_id, dataset_name))
 
-                            # Try to decode the content as UTF-8
-                            try:
-                                response_text = content.decode('utf-8')
-                            except UnicodeDecodeError:
-                                # If UTF-8 fails, try another common encoding
-                                try:
-                                    response_text = content.decode('latin-1')
-                                except UnicodeDecodeError:
-                                    # Last resort, ignore errors
-                                    response_text = content.decode(
-                                        'utf-8', errors='ignore')
-                                    logger.warning(
-                                        f"Had to ignore encoding errors for {url}")
-
-                            if i == 1:  # Data dictionary
-                                # Append full DD content to compiled TSV
-                                try:
-                                    total_dd_rows += append_dd_content_to_file(
-                                        response_text,
-                                        row["dataset_id"],
-                                        filename,
-                                        data_dict_compiled_path,
-                                    )
-                                except Exception as e:
-                                    errors["encoding_errors"].append(
-                                        f"{url} ({str(e)})")
-                                    logger.debug(
-                                        f"Error parsing DD content for {filename}: {str(e)}")
-                                # Extract names and definitions for addition to the variable names list
-                                data_names = parse_data_dictionary(
-                                    response_text)
-                                dd_definitions, dd_units = parse_dd_defs_units(
-                                    response_text)
-                                # Update variable definitions, combining multiple definitions with pipes (ensuring uniqueness)
-                                for var_name, definition in dd_definitions.items():
-                                    if var_name in variable_definitions:
-                                        existing_defs = set(
-                                            variable_definitions[var_name].split("|"))
-                                        existing_defs.add(definition)
-                                        variable_definitions[var_name] = "|".join(
-                                            sorted(existing_defs))
-                                    else:
-                                        variable_definitions[var_name] = definition
-                                # Update variable units, combining multiple units with pipes (ensuring uniqueness)
-                                for var_name, unit in dd_units.items():
-                                    if var_name in variable_units:
-                                        existing_units = set(
-                                            variable_units[var_name].split("|"))
-                                        existing_units.add(unit)
-                                        variable_units[var_name] = "|".join(
-                                            sorted(existing_units))
-                                    else:
-                                        variable_units[var_name] = unit
-                            else:  # CSV file
-                                # For CSV, just get the header
-                                for line in response_text.splitlines():
-                                    if line.strip():  # Skip empty lines
-                                        data_names = parse_header(line)
-                                        break  # We only need the first line
-
-                        elif file_ext == ".xlsx" or file_ext == ".xls":
-                            # Excel file
-                            content = response.content
-                            data_names = parse_excel_header(content, filename)
-
-                        else:
-                            errors["unsupported_filetype"].append(
-                                f"{url} (filetype: {file_ext})")
-                            continue
-
-                        # Normalize the column names
-                        data_names = normalize_variables(data_names)
-
-                        # Get file description for this file if available
-                        current_dataset_id = row["dataset_id"]
-                        current_filename = filename
-                        file_description = ""
-                        if (current_dataset_id in dataset_file_descriptions and
-                                current_filename in dataset_file_descriptions[current_dataset_id]):
-                            file_description = dataset_file_descriptions[current_dataset_id][current_filename]
-
-                        # Update file descriptions for variables from this file
+                        # Update file descriptions
                         if file_description:
                             for var_name in data_names:
                                 if var_name not in variable_file_descriptions:
@@ -863,94 +995,55 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
                                 variable_file_descriptions[var_name].add(
                                     file_description)
 
-                        # Update frequencies based on source type
-                        if i == 1:  # Data dictionary
-                            new_data_dict_vars = False
+                        # Handle data dictionary specific processing
+                        if is_data_dict:
+                            # Append DD content rows to compiled file
+                            if dd_content_rows:
+                                with open(data_dict_compiled_path, "a", newline="") as dd_out:
+                                    dd_writer = csv.writer(
+                                        dd_out, delimiter="\t", lineterminator="\n")
+                                    for row in dd_content_rows:
+                                        dd_writer.writerow(row)
+                                    total_dd_rows += len(dd_content_rows)
+
+                            # Update variable definitions and units
+                            if var_defs:
+                                for var_name, definition in var_defs.items():
+                                    if var_name in variable_definitions:
+                                        existing_defs = set(
+                                            variable_definitions[var_name].split("|"))
+                                        existing_defs.add(definition)
+                                        variable_definitions[var_name] = "|".join(
+                                            sorted(existing_defs))
+                                    else:
+                                        variable_definitions[var_name] = definition
+
+                            if var_units:
+                                for var_name, unit in var_units.items():
+                                    if var_name in variable_units:
+                                        existing_units = set(
+                                            variable_units[var_name].split("|"))
+                                        existing_units.add(unit)
+                                        variable_units[var_name] = "|".join(
+                                            sorted(existing_units))
+                                    else:
+                                        variable_units[var_name] = unit
+
+                            # Update frequencies
                             for name in data_names:
                                 if name in data_dict_frequencies:
                                     data_dict_frequencies[name] += 1
                                 else:
                                     data_dict_frequencies[name] = 1
-                                    new_data_dict_vars = True
-
-                            # If we found new data dictionary variables, append them to the file
-                            if new_data_dict_vars:
-                                with open(variable_names_path, "a") as f:
-                                    for dd_var, freq in data_dict_frequencies.items():
-                                        if freq == 1:  # Only write new variables
-                                            var_name, _ = extract_units(dd_var)
-                                            definition = variable_definitions.get(
-                                                dd_var, "")
-                                            units = variable_units.get(
-                                                dd_var, "")
-                                            # Get dataset info for this variable (using sets to ensure uniqueness)
-                                            dataset_ids = set()
-                                            dataset_names = set()
-                                            if dd_var in dataset_mapping:
-                                                for dataset_id, dataset_name in dataset_mapping[dd_var]:
-                                                    dataset_ids.add(dataset_id)
-                                                    dataset_names.add(
-                                                        dataset_name)
-                                            dataset_ids_str = "|".join(
-                                                sorted(dataset_ids)) if dataset_ids else ""
-                                            dataset_names_str = "|".join(
-                                                sorted(dataset_names)) if dataset_names else ""
-                                            # Get file descriptions for this variable
-                                            file_desc_set = variable_file_descriptions.get(
-                                                dd_var, set())
-                                            file_desc_str = "|".join(
-                                                sorted(file_desc_set)) if file_desc_set else ""
-                                            f.write(
-                                                f"{dd_var}\t{freq}\tdata_dictionary\t{var_name}\t{units}\t{definition}\t{dataset_ids_str}\t{dataset_names_str}\t{file_desc_str}\n")
-                        else:  # Regular data files
-                            new_columns = False
+                        else:
+                            # Regular data files - update column frequencies
                             for name in data_names:
                                 if name in column_frequencies:
                                     column_frequencies[name] += 1
                                 else:
                                     column_frequencies[name] = 1
-                                    new_columns = True
 
-                            # If we found new variables, append them to the file
-                            if new_columns:
-                                with open(variable_names_path, "a") as f:
-                                    for column, freq in column_frequencies.items():
-                                        if freq == 1:  # Only write new variables
-                                            var_name, unit = extract_units(
-                                                column)
-                                            # Columns don't have definitions or units from data dictionaries
-                                            # Get dataset info for this column (using sets to ensure uniqueness)
-                                            dataset_ids = set()
-                                            dataset_names = set()
-                                            if column in dataset_mapping:
-                                                for dataset_id, dataset_name in dataset_mapping[column]:
-                                                    dataset_ids.add(dataset_id)
-                                                    dataset_names.add(
-                                                        dataset_name)
-                                            dataset_ids_str = "|".join(
-                                                sorted(dataset_ids)) if dataset_ids else ""
-                                            dataset_names_str = "|".join(
-                                                sorted(dataset_names)) if dataset_names else ""
-                                            # Get file descriptions for this column
-                                            file_desc_set = variable_file_descriptions.get(
-                                                column, set())
-                                            file_desc_str = "|".join(
-                                                sorted(file_desc_set)) if file_desc_set else ""
-                                            f.write(
-                                                f"{column}\t{freq}\tcolumn\t{var_name}\t{unit}\t\t{dataset_ids_str}\t{dataset_names_str}\t{file_desc_str}\n")
-
-                    except Exception as e:
-                        errors["encoding_errors"].append(f"{url} ({str(e)})")
-                        logger.debug(f"Encoding error for {url}: {str(e)}")
-                        continue
-                else:
-                    errors["response_errors"].append(
-                        f"{url} (status code: {response.status_code})")
-                    continue
-
-            except Exception as e:
-                errors["failed_urls"].append(f"{url} ({str(e)})")
-                continue
+                    pbar.update(1)
 
     # After processing all files, update the file with final frequencies
     # First identify terms that appear in multiple sources and combine their sources
@@ -963,22 +1056,33 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
     all_unique_terms.update(keyword_frequencies.keys())
     all_unique_terms.update(data_dict_frequencies.keys())
 
-    # For each unique term, determine its sources and combined frequency
+    # For each unique term, determine its sources and frequency (by unique datasets)
     for term in all_unique_terms:
         sources = []
-        total_freq = 0
 
         if term in column_frequencies:
             sources.append("column")
-            total_freq += column_frequencies[term]
 
         if term in keyword_frequencies:
             sources.append("keyword")
-            total_freq += keyword_frequencies[term]
 
         if term in data_dict_frequencies:
             sources.append("data_dictionary")
-            total_freq += data_dict_frequencies[term]
+
+        # Calculate frequency as the number of unique datasets this variable appears in
+        unique_datasets = set()
+
+        # Add datasets from the results file mapping
+        if term in dataset_mapping:
+            for dataset_id, dataset_name in dataset_mapping[term]:
+                unique_datasets.add(dataset_id)
+
+        # Add datasets discovered during file processing
+        if term in variable_to_datasets:
+            for dataset_id, dataset_name in variable_to_datasets[term]:
+                unique_datasets.add(dataset_id)
+
+        total_freq = len(unique_datasets)
 
         # Combine sources with pipe delimiter
         combined_source = "|".join(sources)
@@ -998,8 +1102,16 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
             # Get dataset IDs and names for this variable (using sets to ensure uniqueness)
             dataset_ids = set()
             dataset_names = set()
+
+            # Include datasets from the results file mapping (pre-existing variables)
             if term in dataset_mapping:
                 for dataset_id, dataset_name in dataset_mapping[term]:
+                    dataset_ids.add(dataset_id)
+                    dataset_names.add(dataset_name)
+
+            # Include datasets discovered during file processing
+            if term in variable_to_datasets:
+                for dataset_id, dataset_name in variable_to_datasets[term]:
                     dataset_ids.add(dataset_id)
                     dataset_names.add(dataset_name)
 
