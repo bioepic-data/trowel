@@ -89,7 +89,8 @@ def get_essdive_metadata(path, outpath):
 @main.command()
 @path_option
 @outpath_option
-def get_essdive_variables(path, outpath):
+@click.option('-w', '--workers', help='Number of parallel workers for file processing.', type=int, default=10)
+def get_essdive_variables(path, outpath, workers):
     """Get all variable names from all data files and keywords from XML files.
     Also extracts variable names from data dictionaries if present and
     compiles them into a single list (data_dictionaries.tsv).
@@ -122,7 +123,7 @@ def get_essdive_variables(path, outpath):
             logging.warning("Results file not found. Dataset mapping will not be available.")
             results_path = None
 
-    variable_names_path = get_variable_names(filetable_path, results_path, outpath)
+    variable_names_path = get_variable_names(filetable_path, results_path, outpath, max_workers=workers)
 
     logging.info(f"Variable names and keywords written to {variable_names_path}")
 
