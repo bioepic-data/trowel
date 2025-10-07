@@ -503,8 +503,6 @@ def get_file_extension(filename: str) -> str:
     """Get the lowercase extension of a file."""
     return os.path.splitext(filename.lower())[1]
 
-    return names
-
 
 def _process_flmd_file(row_dict: dict) -> tuple:
     """Process a single FLMD file and return results.
