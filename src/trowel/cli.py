@@ -95,11 +95,11 @@ def get_essdive_variables(path, outpath, workers):
     Also extracts variable names from data dictionaries if present and
     compiles them into a single list (data_dictionaries.tsv).
     Files are those with identifiers retrieved by the get_essdive_metadata function.
-    By default, this is filetable.txt."""
+    By default, this is filetable.tsv."""
 
-    # If path is not provided, look for filetable.txt in the outpath directory
+    # If path is not provided, look for filetable.tsv in the outpath directory
     if not path:
-        filetable_path = os.path.join(outpath, "filetable.txt")
+        filetable_path = os.path.join(outpath, "filetable.tsv")
     else:
         filetable_path = path
 
@@ -115,10 +115,10 @@ def get_essdive_variables(path, outpath, workers):
         sys.exit()
 
     # Look for results file in the same directory as the filetable
-    results_path = os.path.join(os.path.dirname(filetable_path), "results.txt")
+    results_path = os.path.join(os.path.dirname(filetable_path), "results.tsv")
     if not os.path.exists(results_path):
         # Try in the output directory if not found with filetable
-        results_path = os.path.join(outpath, "results.txt")
+        results_path = os.path.join(outpath, "results.tsv")
         if not os.path.exists(results_path):
             logging.warning("Results file not found. Dataset mapping will not be available.")
             results_path = None
