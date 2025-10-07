@@ -4,6 +4,7 @@
 
 # TODO: fix frequency counting as some variables are definitely
 # getting counted multiple times.
+# That is, counts are by file, not by dataset.
 
 from io import StringIO
 import sys
@@ -547,12 +548,17 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
 
     # Load dataset mapping if results file is provided
     dataset_mapping = {}  # maps variable -> list of (dataset_id, dataset_name)
+    dataset_id_to_name = {}  # maps dataset_id -> dataset_name
     if results_path and os.path.exists(results_path):
         try:
             results_df = pl.read_csv(results_path, separator="\t")
             for row in results_df.iter_rows(named=True):
                 dataset_id = row["id"]
                 dataset_name = row["name"]
+
+                # Build dataset_id to dataset_name mapping
+                dataset_id_to_name[dataset_id] = dataset_name
+
                 variables_str = row.get("variables", "")
                 if variables_str:
                     # Split pipe-delimited variables
@@ -566,6 +572,7 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
             logger.warning(
                 f"Could not load results file for dataset mapping: {e}")
             dataset_mapping = {}
+            dataset_id_to_name = {}
     data_dict_frequencies = {}
     # Track definitions and units for variables from data dictionaries
     variable_definitions = {}
@@ -614,6 +621,10 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
     # Initialize the output file
     with open(variable_names_path, "w") as f:
         f.write("name\tfrequency\tsource\tvariable_name\tunits\tdefinition\tdataset\tdataset_name\tfile_description\n")
+
+    # Track variables found in each dataset (discovered during file processing)
+    # maps variable -> set of (dataset_id, dataset_name) tuples
+    variable_to_datasets = {}
 
     # First, process FLMD files to build file description mappings
     dataset_file_descriptions = {}  # maps dataset_id -> {filename -> description}
@@ -674,6 +685,7 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
         for idx, row in enumerate(tqdm(xml_files.iter_rows(named=True), desc="Processing XML files", unit="file", total=len(xml_files))):
             url = row["url"]
             filename = row["name"]
+            dataset_id = row["dataset_id"]
 
             try:
                 response = requests.get(url, headers=USER_HEADERS, verify=True)
@@ -702,6 +714,14 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
                         # Normalize keywords
                         # We'll treat them like variables though
                         keywords = normalize_variables(keywords)
+
+                        # Track dataset association for these keywords
+                        dataset_name = dataset_id_to_name.get(dataset_id, "")
+                        for keyword in keywords:
+                            if keyword not in variable_to_datasets:
+                                variable_to_datasets[keyword] = set()
+                            variable_to_datasets[keyword].add(
+                                (dataset_id, dataset_name))
 
                         # Update keyword frequencies
                         new_keywords = False
@@ -756,6 +776,7 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
         for idx, row in enumerate(tqdm(fileset.iter_rows(named=True), desc=f"Processing {name}", unit="file", total=len(fileset))):
             url = row["url"]
             filename = row["name"]
+            dataset_id = row["dataset_id"]
             file_ext = get_file_extension(filename)
 
             try:
@@ -845,6 +866,14 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
 
                         # Normalize the column names
                         data_names = normalize_variables(data_names)
+
+                        # Track dataset association for these variables
+                        dataset_name = dataset_id_to_name.get(dataset_id, "")
+                        for var_name in data_names:
+                            if var_name not in variable_to_datasets:
+                                variable_to_datasets[var_name] = set()
+                            variable_to_datasets[var_name].add(
+                                (dataset_id, dataset_name))
 
                         # Get file description for this file if available
                         current_dataset_id = row["dataset_id"]
@@ -998,8 +1027,16 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
             # Get dataset IDs and names for this variable (using sets to ensure uniqueness)
             dataset_ids = set()
             dataset_names = set()
+
+            # Include datasets from the results file mapping (pre-existing variables)
             if term in dataset_mapping:
                 for dataset_id, dataset_name in dataset_mapping[term]:
+                    dataset_ids.add(dataset_id)
+                    dataset_names.add(dataset_name)
+
+            # Include datasets discovered during file processing
+            if term in variable_to_datasets:
+                for dataset_id, dataset_name in variable_to_datasets[term]:
                     dataset_ids.add(dataset_id)
                     dataset_names.add(dataset_name)
 
