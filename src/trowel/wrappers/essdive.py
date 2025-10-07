@@ -659,8 +659,6 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
                                 dataset_file_descriptions[dataset_id] = {}
                             dataset_file_descriptions[dataset_id].update(
                                 file_desc_mapping)
-                            logger.debug(
-                                f"Found {len(file_desc_mapping)} file descriptions in {filename}")
 
                     except Exception as e:
                         errors["encoding_errors"].append(f"{url} ({str(e)})")
