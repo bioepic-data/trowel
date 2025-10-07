@@ -2,10 +2,6 @@
 
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
-# TODO: fix frequency counting as some variables are definitely
-# getting counted multiple times.
-# That is, counts are by file, not by dataset.
-
 from io import StringIO
 import sys
 import string
@@ -990,22 +986,33 @@ def get_variable_names(filetable_path: str, results_path: Optional[str] = None, 
     all_unique_terms.update(keyword_frequencies.keys())
     all_unique_terms.update(data_dict_frequencies.keys())
 
-    # For each unique term, determine its sources and combined frequency
+    # For each unique term, determine its sources and frequency (by unique datasets)
     for term in all_unique_terms:
         sources = []
-        total_freq = 0
 
         if term in column_frequencies:
             sources.append("column")
-            total_freq += column_frequencies[term]
 
         if term in keyword_frequencies:
             sources.append("keyword")
-            total_freq += keyword_frequencies[term]
 
         if term in data_dict_frequencies:
             sources.append("data_dictionary")
-            total_freq += data_dict_frequencies[term]
+
+        # Calculate frequency as the number of unique datasets this variable appears in
+        unique_datasets = set()
+
+        # Add datasets from the results file mapping
+        if term in dataset_mapping:
+            for dataset_id, dataset_name in dataset_mapping[term]:
+                unique_datasets.add(dataset_id)
+
+        # Add datasets discovered during file processing
+        if term in variable_to_datasets:
+            for dataset_id, dataset_name in variable_to_datasets[term]:
+                unique_datasets.add(dataset_id)
+
+        total_freq = len(unique_datasets)
 
         # Combine sources with pipe delimiter
         combined_source = "|".join(sources)
