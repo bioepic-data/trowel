@@ -1,0 +1,484 @@
+atmosphere	19
+atmospheric pressure	5
+atmospheric pressure measurements	5
+barometric pressure	3
+discharge	4
+discharge rate	1
+dissolved oxygen	10
+earth science	91
+ecosystem respiration	2
+gas exchange	1
+gases	10
+gross primary production	4
+ground water	15
+ground water processes/measurements	3
+light	1
+net ecosystem production	2
+terrestrial hydrosphere	37
+water characteristics	13
+water quality/water chemistry	20
+water temperature	10
+discharge/flow	2
+ecosystem respiration rate	1
+flow velocity	1
+gas exchange (k600)	1
+respiration rates	1
+sediment respiration rate	1
+slope	2
+surface water	14
+surface water processes/measurements	4
+water column respiration rate	1
+water depth	3
+watershed characteristics	3
+watershed slope	3
+aerobic respiration with spring substrate inputs (log10, gc/m2/day)	1
+aerobic respiration with summer substrate inputs (log10, gc/m2/day)	1
+aerobic respiration(log10, gc/m2/day)	1
+anaerobic respiration with spring substrate inputs (log10, gc/m2/day)	1
+anaerobic respiration with summer substrate inputs (log10, gc/m2/day)	1
+anaerobic respiration(log10, gc/m2/day)	1
+hyporheic exchange flux (log10, m/s)	1
+residence time (log10, second)	1
+stream dissolved organic carbon (mg/l)	1
+stream dissolved oxygen (mg/l)	1
+stream nitrate (mg/l)	1
+total respiration (log10,gc/m2/day)	1
+total respiration with spring substrate inputs (log10, gc/m2/day)	1
+dissolved oxygen concentration	1
+dissolved oxygen percent saturation	1
+gas flow rate	1
+r value	1
+raw light intensity	1
+altitude	1
+area	1
+area ratio	1
+d10 area	1
+d10 count	1
+d5 area	1
+d5 count	1
+d50 area	1
+d50 count	1
+d84 area	1
+d84 count	1
+date	1
+depth	1
+drainage area	1
+friction factor	1
+grain number	1
+grain size	1
+height	1
+interstitial velocity magnitude	1
+latitude	3
+longitude	3
+mass transfer	1
+nitrate uptake velocity	1
+permeability	1
+pixel	1
+relative error	1
+resolution	1
+scale	1
+shear velocity	1
+stream order	3
+velocity	2
+watershed drainage	1
+active layer	5
+frozen ground	14
+ground ice	1
+land surface	33
+permafrost	5
+soil depth	6
+soil horizons/profile	1
+soil moisture/water content	14
+soils	29
+conductivity	4
+isotopes	6
+radioisotopes	3
+atmospheric chemistry	1
+atmospheric temperature	11
+atmospheric temperature indices	1
+carbon and hydrocarbon compounds	1
+carbon dioxide	1
+methane	1
+atmospheric water vapor	10
+basin area	1
+elevation	2
+evapotranspiration	5
+image suitability	1
+land use/land cover	2
+land use/land cover classification	2
+median grain size (d50)	1
+precipitation	9
+precipitation as snow	1
+snow	1
+solid precipitation	1
+stream length	1
+stream slope	1
+terrain elevation	4
+topography	4
+urban land cover	1
+water vapor processes	5
+watershed length	1
+dissolved organic matter	2
+dom	1
+fourier-transform ion cyclotron resonance mass spectrometry	2
+fticr-ms	2
+high-resolution mass spectrometry	1
+organic matter	4
+sediment elemental composition	1
+soil elemental composition	1
+water extractable dom	1
+x-ray fluorescence	1
+xrf	1
+aerobic respiration rate	1
+biomass	2
+dissolved organic carbon	7
+microbial growth rate	1
+burn extent	1
+climate	1
+doc	1
+nitrate	2
+no3	1
+time-since-fire	1
+biosphere	23
+canopy characteristics	3
+cryosphere	10
+digital elevation/terrain model (dem)	1
+snow depth	5
+snow/ice	11
+vegetation	15
+anions	4
+groundwater chemistry	9
+surface water chemistry	6
+dissolved ammonia	1
+total dissolved nitrogen	1
+patriculate/dissolved inorganic carbon	2
+patriculate/dissolved organic carbon	2
+cations	4
+snow/ice temperature	6
+soil temperature	13
+c	1
+carbon	14
+fourier-transform ion cyclotron resonance	1
+fti	1
+fticr	1
+h	1
+hydrogen	1
+n	1
+nitrogen	11
+nitrogen compounds	1
+nutrients	2
+o	1
+oxygen	1
+p	1
+phosphorous	2
+s	1
+sulfur	2
+residence time	1
+river water stage	1
+temperature	1
+air temperature	10
+aod	1
+backscatter profiles	1
+biomass burning plumes	1
+plumes	1
+sky images	1
+spectrally resolved aerosol optical depth	1
+spectrally resolved aerosol optical depth daily averages	1
+spectrally resolved diffuse irradiance	1
+spectrally resolved normal irradiance	1
+spectrally resolved total irradiance	1
+surface shortwave direct diffuse irradiance	1
+surface shortwave direct normal irradiance	1
+surface shortwave direct total irradiance	1
+geomorphic landforms/processes	1
+solid earth	1
+freshwater springs	2
+ground water features	5
+rivers/streams	2
+stable isotopes	2
+surface water features	2
+agriculture	9
+electrical conductivity	2
+surface temperature	9
+water table	3
+water table depth	1
+dissolved carbon dioxide	1
+nitrous oxide	1
+ocean chemistry	1
+oceans	1
+partial pressure of methane in sea water	1
+canopy height	2
+easting	1
+frost table surface	1
+ground surface	1
+northing	1
+water surface	1
+lidar	1
+spectral/engineering	3
+aboveground biomass	1
+basal diameter	1
+gps	1
+presence/absence	1
+snow density	2
+snow water equivalent	2
+archaea gene copy number	1
+bacterial gene copy number	1
+fungal gene copy number	1
+microbial biomass carbon	1
+microbial dna	1
+percent clay	1
+percent sand	1
+percent silt	1
+phospholipid fatty acids	1
+soil carbon	1
+soil nitrogen	1
+soil organic carbon	1
+soil organic nitrogen	1
+benzene polycarboxylic acids	1
+hydrolysable biopolymers	1
+lignin phenols	1
+solvent extractable compounds	1
+atmospheric radiation	3
+atmospheric winds	3
+dew point temperature	3
+humidity	5
+precipitation amount	4
+relative humidity	5
+saturation vapor pressure	2
+solar radiation	2
+surface winds	3
+vapor pressure	2
+water vapor indicators	6
+wind direction	2
+wind speed	3
+permafrost layer thickness	1
+permafrost temperature	1
+data analysis and visualization	1
+earth science services	1
+ammonia	1
+ammonium	1
+chlorophyll-a	1
+dissolved inorganic carbon	2
+nh3	1
+nh3-total	1
+nh4	1
+ph	4
+resistivity	1
+salinity	1
+specific conductance	2
+total ammonia	1
+total dissolved solids	2
+total nitrogen	1
+total phosphorus	1
+total sulfur	1
+turbidity	2
+forest mensuration	1
+forest science	2
+metabolite	1
+nonstructural carbohydrates	1
+osmotic potential	2
+pressure potential	2
+relative water content	2
+soluble sugars	2
+starch	2
+water potential	2
+ecological dynamics	4
+ecosystem functions	3
+forest management	1
+forest protection	1
+leaf carbon content	1
+non-structural carbohydrates	1
+nutrient cycling	2
+plant characteristics	2
+primary production	1
+species/population interactions	1
+symbiosis	1
+trophic dynamics	1
+vegetation carbon content	1
+vegetation water content	1
+wood carbon content	1
+climate indicators	2
+permafrost melt	1
+terrestrial hydrosphere indicators	1
+ecosystems	4
+forests	1
+leaf characteristics	5
+liana functional traits	1
+p50	1
+phosphorus	3
+sapwood hydraulic conductivity	1
+slope of the plc curve	1
+terrestrial ecosystems	3
+tree functional traits	1
+tropical rainforest	1
+middle infrared spectroscopy	1
+pyrogenic carbon	1
+circumference	1
+radial growth	1
+leaf area index (lai)	2
+liquid precipitation	1
+rain	1
+chemistry	1
+community dynamics	1
+community structure	1
+stage height	1
+water pressure	1
+upper level winds	1
+maximum vegetation height	1
+o horizon depth	1
+soil moisture	1
+thaw depth	1
+date of leaf out	1
+date of leaf senescence	1
+date of peak leaf production	1
+deciduous vegetation	1
+evergreen vegetation	1
+green chromatic coordinate	1
+plant phenology	2
+groundwater flux	1
+groundwater level	3
+mineralogy	2
+sensor depth	1
+total inorganic carbon	1
+total organic carbon	1
+freeze/thaw	2
+biogeochemical cycles	1
+visible imagery	2
+visible wavelengths	2
+alpine/tundra	2
+arctic tundra	2
+cation exchange capacity	1
+soil organic carbon (soc)	2
+soil ph	3
+seasonally frozen ground	2
+anaerobic bacterial lipids	1
+delta-13c of anaerobic bacterial lipids	1
+delta-13c of fungal lipids	1
+delta-13c of gram-negative bacterial lipids	1
+delta-13c of gram-positive bacterial	1
+delta-13c of lipid mass	1
+fungal lipids	1
+gram-negative bacterial lipids	1
+gram-positive bacterial	1
+lipid mass	1
+microbial respiration rate	2
+nitrate concentration	2
+soluble reactive phosphorus concentration	2
+specific conductivity	1
+stream discharge	1
+stream velocity	1
+carbon dioxide flux	1
+concentration of intracellular carbon dioxide	1
+electron transport rate of photosystem ii	1
+growth rate	1
+leaf area	1
+leaf biomass	1
+leaf carbon	1
+leaf co2 assimilation rate	1
+leaf nitrogen	1
+leaf temperature	1
+light level (ppfd)	1
+photosynthetic water use	1
+quantum yield of carbon dioxide assimilation	1
+quantum yield of non-photochemical quenching	1
+quantum yield of photosystem ii	1
+root biomass	1
+root carbon	1
+root mass	1
+root nitrogen	1
+root respiration rate	1
+root:leaf	1
+root:shoot	1
+specific leaf area	1
+stem biomass	1
+ammonium concentration	1
+decomposition rate	1
+invertebrate abundance	1
+tensile loss	1
+soil bulk density	2
+thermal conductivity	1
+vegetation cover	1
+soil iron content	1
+soil respiration	2
+comid	1
+dissolved 13c carbon dioxide	1
+dissolved 13c methane	1
+inorganic 14c carbon	1
+cryosols	1
+soil salinity/soil sodicity	1
+soil structure	1
+soil texture	1
+burn severity	1
+et	1
+gpp	1
+lai	1
+leaf area index	1
+surface air temperature	1
+vegetation type	1
+vpd	1
+vt	1
+water vapor deficit	1
+streamflow	1
+allometric scaling categories	1
+hyporheic exchange fluxes	1
+hyporheic respiration	1
+land cover	1
+watershed area	1
+24 hour precipitation amount	1
+longwave radiation	1
+net radiation	1
+shortwave radiation	1
+skin temperature	1
+soil heat budget	1
+vegetation index	1
+groundwater temperature	2
+aluminum	1
+aqueous p	1
+calcium	2
+elemental analysis	1
+icp-oes	1
+inductively coupled plasma optical emission spectrometer	1
+inorganic phosphorus	1
+iron	3
+leachable organic matter	1
+magnesium	2
+molybdate reactive p	1
+nuclear magnetic resonance	1
+organic phosphorus	1
+p-xanes	1
+particulate p	1
+potassium	2
+pyrogenic organic matter	1
+pyrogenic phosphorus	1
+sodium	1
+solution state 31p-nmr	1
+spectroscopy	1
+x-ray absorption near edge structure	1
+bin/binning:gcmd	3
+metagenome	3
+metagenome assembled genomes (mags):gcmd	3
+microbiome:gcmd	3
+omics	3
+omics methodology	3
+freshwater ecosystems	1
+headwater stream	1
+organic carbon mineralization velocity	1
+organic carbon spiraling length	1
+rivers/stream	1
+stream photosynthetically active radiation	1
+stream width	1
+levoglucosan	1
+ess-dive csv file formatting guidelines reporting format	1
+ess-dive file level metadata reporting format	1
+ess-dive water-soil-sediment chemistry reporting format	1
+micronutrients/trace elements	1
+soil biogeochemistry	1
+soil chemistry	1
+contaminants	1
+water trace elements	1
+fire ecology	1
+fire occurrence	1
+cryospheric indicators	1
+snow cover	1
+snow melt	1
+solids	1
