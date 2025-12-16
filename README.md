@@ -189,23 +189,49 @@ trowel embeddings load-embeddings \
 **Output:**
 - `embedding_stats.json` - Statistics (count, dimension, similarity metrics)
 
+**Note:** This command generates new embeddings. To reuse pre-computed embeddings stored in the `backup/` directory or elsewhere, use the other embedding commands (find-similar, visualize-clusters, etc.) which have built-in support for loading from saved files.
+
 #### find-similar
 
 Find the most similar terms to a query term.
 
 ```bash
+# Load from current directory
 trowel embeddings find-similar \
   -e bervo_embeds.csv \
   -q BERVO:0000026 \
   -n 20 \
   -o results.txt
+
+# Load from backup/ directory (auto-discovered)
+trowel embeddings find-similar \
+  -e bervo_embeds.csv \
+  -q BERVO:0000026 \
+  -n 20
+
+# Load only first 5000 terms from large file
+trowel embeddings find-similar \
+  -e bervo_embeds.csv \
+  -q BERVO:0000026 \
+  -n 20 \
+  -l 5000
 ```
 
 **Options:**
-- `-e, --embeddings TEXT` - Embedding CSV file (required)
+- `-e, --embeddings TEXT` - Path to embedding CSV file. Can be:
+  - Full path: `/path/to/embeddings.csv`
+  - Filename: `bervo_embeds.csv` (searches current dir and `backup/`)
+  - Without extension: `bervo_embeds` (auto-adds `.csv` and checks `backup/`)
 - `-q, --query TEXT` - Query term ID or label (required)
 - `-n, --top-n INTEGER` - Number of results (default: 10)
+- `-l, --limit INTEGER` - Maximum number of terms to load (optional, useful for large files)
+- `-s, --skip INTEGER` - Number of terms to skip from beginning (default: 0)
 - `-o, --output TEXT` - Output file for results (optional)
+
+**Embedding File Locations:**
+- Current working directory: `bervo_embeds.csv`
+- Backup directory: `backup/bervo_embeds.csv` (auto-discovered)
+- Can also pre-generate and store embeddings in `backup/` for reuse across sessions
 
 #### visualize-clusters
 
@@ -218,16 +244,28 @@ trowel embeddings visualize-clusters \
   -m pca \
   -o clusters_pca.png
 
-# Better quality t-SNE visualization
+# Better quality t-SNE visualization (slower)
 trowel embeddings visualize-clusters \
   -e bervo_embeds.csv \
   -m tsne \
   -o clusters_tsne.png
+
+# Load from backup/ and use only first 5000 terms
+trowel embeddings visualize-clusters \
+  -e bervo_embeds.csv \
+  -m pca \
+  -o clusters_pca.png \
+  -l 5000
 ```
 
 **Options:**
-- `-e, --embeddings TEXT` - Embedding CSV file (required)
+- `-e, --embeddings TEXT` - Path to embedding CSV file. Can be:
+  - Full path: `/path/to/embeddings.csv`
+  - Filename: `bervo_embeds.csv` (searches current dir and `backup/`)
+  - Without extension: `bervo_embeds` (auto-adds `.csv` and checks `backup/`)
 - `-m, --method [pca|tsne]` - Dimensionality reduction method (default: pca)
+- `-l, --limit INTEGER` - Maximum number of terms to load (optional, useful for large files)
+- `-s, --skip INTEGER` - Number of terms to skip from beginning (default: 0)
 - `-o, --output TEXT` - Output PNG file
 - `--label-interval INTEGER` - Interval for labeling points (default: 100)
 
@@ -384,6 +422,45 @@ trowel embeddings cross-collection-similarity \
   -o ontology_comparison.txt
 ```
 
+## Embedding Storage and Reuse
+
+Pre-computed embeddings can be stored in the `backup/` directory and automatically discovered by TROWEL's embedding commands.
+
+### Recommended Workflow
+
+1. **Generate embeddings once** and save to `backup/`:
+```bash
+# Generate embeddings using CurateGPT
+curategpt index -c bervo -D duckdb prepared.csv
+
+# Export to CSV and store in backup/ for reuse
+duckdb -c "SELECT id, embeddings FROM bervo" db/db_file.duckdb > backup/bervo_embeds.csv
+```
+
+2. **Reuse embeddings for analysis** (no regeneration needed):
+```bash
+# Auto-finds in backup/
+trowel embeddings find-similar -e bervo_embeds.csv -q BERVO:0000026
+
+# Work with subsets of large files
+trowel embeddings visualize-clusters -e bervo_embeds.csv -m pca -l 5000 -o viz.png
+
+# All searches check: current dir → backup/ → auto-add .csv → backup/ with .csv
+```
+
+### File Resolution
+
+When you specify an embedding file with `-e bervo_embeds.csv`, TROWEL searches:
+1. Current working directory: `bervo_embeds.csv`
+2. Backup directory: `backup/bervo_embeds.csv`
+3. Current dir with .csv: `bervo_embeds.csv` (if you specify `bervo_embeds`)
+4. Backup with .csv: `backup/bervo_embeds.csv` (if you specify `bervo_embeds`)
+
+This allows you to:
+- Pre-compute embeddings and store them once in `backup/`
+- Reference them by simple filename from anywhere in your workflow
+- Work with multiple embedding versions without specifying full paths
+
 ## About BERVO
 
 TROWEL is specifically designed to work with the [BERVO ontology](https://github.com/bioepic-data/bervo), a comprehensive biogeochemical ontology for environmental science variables. While TROWEL may work with other ontologies, optimal results are achieved with BERVO due to its well-structured hierarchy and comprehensive variable definitions.
@@ -393,6 +470,15 @@ BERVO includes:
 - Clear hierarchical organization (categories starting with BERVO:9)
 - Units and measurement specifications
 - Integration with ESS-DIVE datasets
+
+### Downloading BERVO
+
+Download the latest BERVO ontology directly from the official source:
+```bash
+trowel get-bervo -o bervo.csv
+```
+
+This downloads the latest BERVO from Google Sheets, making it easy to keep your ontology current.
 
 ## Setup & Configuration
 

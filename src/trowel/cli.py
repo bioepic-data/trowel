@@ -309,22 +309,57 @@ def load_embeddings(embedding_file, output_dir):
 
 
 @embeddings.command()
-@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT (or just filename to search in backup/).', required=True)
 @click.option('-q', '--query', help='Query term to find similar terms for.', required=True)
 @click.option('-n', '--top-n', type=int, default=10, help='Number of similar terms to return.')
+@click.option('-l', '--limit', type=int, default=None, help='Maximum number of terms to load (for large files).')
+@click.option('-s', '--skip', type=int, default=0, help='Number of terms to skip from beginning.')
 @click.option('-o', '--output', 'output_file', help='Optional output file for results.', required=False)
-def find_similar(embedding_file, query, top_n, output_file):
+def find_similar(embedding_file, query, top_n, limit, skip, output_file):
     """Find the most similar terms to a query term.
+
+    You can load embeddings from:
+    - Full path: /path/to/embeddings.csv
+    - Filename (checks backup/ dir): bervo_embeds.csv
+    - backup/ default: just use -e bervo (looks for backup/bervo*)
+
+    For large embedding files, use --limit and --skip to load a subset.
 
     Example:
         trowel embeddings find-similar -e bervo_embeds.csv -q BERVO:0000026 -n 10
+        trowel embeddings find-similar -e backup/bervo_embeds.csv -q BERVO:0000026 -n 10
+        trowel embeddings find-similar -e bervo_embeds.csv -q BERVO:0000026 -n 10 -l 5000
     """
+    # Try to find the embedding file
     if not os.path.exists(embedding_file):
-        logging.error(f"Embedding file {embedding_file} does not exist.")
-        sys.exit(1)
+        # Try backup directory
+        backup_path = os.path.join('backup', embedding_file)
+        if os.path.exists(backup_path):
+            embedding_file = backup_path
+            logging.info(f"Found embeddings in backup/: {embedding_file}")
+        else:
+            # Try with .csv extension
+            csv_path = embedding_file if embedding_file.endswith('.csv') else f"{embedding_file}.csv"
+            if os.path.exists(csv_path):
+                embedding_file = csv_path
+            else:
+                backup_csv = os.path.join('backup', csv_path)
+                if os.path.exists(backup_csv):
+                    embedding_file = backup_csv
+                    logging.info(f"Found embeddings in backup/: {embedding_file}")
+                else:
+                    logging.error(f"Embedding file not found: {embedding_file} (checked current dir and backup/)")
+                    sys.exit(1)
 
     logging.info(f"Loading embeddings from {embedding_file}...")
     labels, vectors = load_embeddings_from_csv(embedding_file)
+
+    # Apply skip and limit to reduce memory usage for large files
+    if skip > 0 or limit:
+        end_idx = skip + limit if limit else None
+        labels = labels[skip:end_idx]
+        vectors = vectors[skip:end_idx]
+        logging.info(f"Using {len(labels)} terms (skipped {skip}, limited to {limit})")
 
     logging.info("Computing cosine similarity matrix...")
     similarity_matrix = compute_cosine_similarity(vectors)
@@ -353,24 +388,55 @@ def find_similar(embedding_file, query, top_n, output_file):
 
 
 @embeddings.command()
-@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file (or just filename to search in backup/).', required=True)
 @click.option('-m', '--method', type=click.Choice(['pca', 'tsne']), default='pca',
               help='Dimensionality reduction method.')
+@click.option('-l', '--limit', type=int, default=None, help='Maximum number of terms to load (for large files).')
+@click.option('-s', '--skip', type=int, default=0, help='Number of terms to skip from beginning.')
 @click.option('-o', '--output', 'output_file', help='Output file path for the plot.', required=False)
 @click.option('--label-interval', type=int, default=100, help='Interval for labeling points.')
-def visualize_clusters(embedding_file, method, output_file, label_interval):
+def visualize_clusters(embedding_file, method, limit, skip, output_file, label_interval):
     """Visualize term clusters using dimensionality reduction.
+
+    Can load embeddings from:
+    - Full path: /path/to/embeddings.csv
+    - Filename (checks backup/ dir): bervo_embeds.csv
+
+    For large embedding files, use --limit and --skip to load a subset.
 
     Example:
         trowel embeddings visualize-clusters -e bervo_embeds.csv -m pca -o clusters_pca.png
         trowel embeddings visualize-clusters -e bervo_embeds.csv -m tsne -o clusters_tsne.png
+        trowel embeddings visualize-clusters -e bervo_embeds.csv -m pca -o clusters_pca.png -l 5000
     """
+    # Try to find the embedding file
     if not os.path.exists(embedding_file):
-        logging.error(f"Embedding file {embedding_file} does not exist.")
-        sys.exit(1)
+        backup_path = os.path.join('backup', embedding_file)
+        if os.path.exists(backup_path):
+            embedding_file = backup_path
+            logging.info(f"Found embeddings in backup/: {embedding_file}")
+        else:
+            csv_path = embedding_file if embedding_file.endswith('.csv') else f"{embedding_file}.csv"
+            if os.path.exists(csv_path):
+                embedding_file = csv_path
+            else:
+                backup_csv = os.path.join('backup', csv_path)
+                if os.path.exists(backup_csv):
+                    embedding_file = backup_csv
+                    logging.info(f"Found embeddings in backup/: {embedding_file}")
+                else:
+                    logging.error(f"Embedding file not found: {embedding_file} (checked current dir and backup/)")
+                    sys.exit(1)
 
     logging.info(f"Loading embeddings from {embedding_file}...")
     labels, vectors = load_embeddings_from_csv(embedding_file)
+
+    # Apply skip and limit to reduce memory usage for large files
+    if skip > 0 or limit:
+        end_idx = skip + limit if limit else None
+        labels = labels[skip:end_idx]
+        vectors = vectors[skip:end_idx]
+        logging.info(f"Using {len(labels)} terms (skipped {skip}, limited to {limit})")
 
     title = f"Term Clustering using {method.upper()}"
 
