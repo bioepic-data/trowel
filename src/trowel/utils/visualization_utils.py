@@ -26,7 +26,8 @@ def reduce_dimensionality_pca(vectors: List[np.ndarray]) -> np.ndarray:
     try:
         from sklearn.decomposition import PCA
     except ImportError:
-        raise ImportError("scikit-learn is required for this function. Install with: pip install scikit-learn")
+        raise ImportError(
+            "scikit-learn is required for this function. Install with: pip install scikit-learn")
 
     vectors_array = np.array(vectors)
     reducer = PCA(n_components=2)
@@ -53,7 +54,8 @@ def reduce_dimensionality_tsne(
     try:
         from sklearn.manifold import TSNE
     except ImportError:
-        raise ImportError("scikit-learn is required for this function. Install with: pip install scikit-learn")
+        raise ImportError(
+            "scikit-learn is required for this function. Install with: pip install scikit-learn")
 
     vectors_array = np.array(vectors)
     n_samples = len(vectors_array)
@@ -61,7 +63,8 @@ def reduce_dimensionality_tsne(
     if perplexity is None:
         perplexity = min(n_samples - 1, 30)
 
-    reducer = TSNE(n_components=2, perplexity=perplexity, random_state=random_state)
+    reducer = TSNE(n_components=2, perplexity=perplexity,
+                   random_state=random_state)
     reduced_data = reducer.fit_transform(vectors_array)
 
     return reduced_data
@@ -88,7 +91,8 @@ def plot_clusters_pca(
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        raise ImportError("matplotlib is required for this function. Install with: pip install matplotlib")
+        raise ImportError(
+            "matplotlib is required for this function. Install with: pip install matplotlib")
 
     logging.info("Reducing dimensionality using PCA...")
     reduced_data = reduce_dimensionality_pca(vectors)
@@ -99,12 +103,13 @@ def plot_clusters_pca(
     if colors is None:
         ax.scatter(reduced_data[:, 0], reduced_data[:, 1], s=50, alpha=0.6)
     else:
-        ax.scatter(reduced_data[:, 0], reduced_data[:, 1], c=colors, s=50, alpha=0.6)
+        ax.scatter(reduced_data[:, 0], reduced_data[:,
+                   1], c=colors, s=50, alpha=0.6)
 
     # Add labels to a subset of points
     for i in range(0, len(labels), label_interval):
         ax.annotate(labels[i], (reduced_data[i, 0], reduced_data[i, 1]),
-                   fontsize=9, ha='right', alpha=0.7)
+                    fontsize=9, ha='right', alpha=0.7)
 
     ax.set_title(title)
     ax.set_xlabel('Component 1')
@@ -144,9 +149,11 @@ def plot_clusters_tsne(
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        raise ImportError("matplotlib is required for this function. Install with: pip install matplotlib")
+        raise ImportError(
+            "matplotlib is required for this function. Install with: pip install matplotlib")
 
-    logging.info("Reducing dimensionality using t-SNE (this may take a while)...")
+    logging.info(
+        "Reducing dimensionality using t-SNE (this may take a while)...")
     reduced_data = reduce_dimensionality_tsne(vectors, perplexity=perplexity)
 
     logging.info("Creating plot...")
@@ -155,12 +162,13 @@ def plot_clusters_tsne(
     if colors is None:
         ax.scatter(reduced_data[:, 0], reduced_data[:, 1], s=50, alpha=0.6)
     else:
-        ax.scatter(reduced_data[:, 0], reduced_data[:, 1], c=colors, s=50, alpha=0.6)
+        ax.scatter(reduced_data[:, 0], reduced_data[:,
+                   1], c=colors, s=50, alpha=0.6)
 
     # Add labels to a subset of points
     for i in range(0, len(labels), label_interval):
         ax.annotate(labels[i], (reduced_data[i, 0], reduced_data[i, 1]),
-                   fontsize=9, ha='right', alpha=0.7)
+                    fontsize=9, ha='right', alpha=0.7)
 
     ax.set_title(title)
     ax.set_xlabel('Component 1')
@@ -195,7 +203,8 @@ def plot_similarity_heatmap(
         import matplotlib.pyplot as plt
         import seaborn as sns
     except ImportError:
-        raise ImportError("matplotlib and seaborn are required. Install with: pip install matplotlib seaborn")
+        raise ImportError(
+            "matplotlib and seaborn are required. Install with: pip install matplotlib seaborn")
 
     # Select a subset of terms
     subset_labels = labels[:num_terms]
@@ -244,7 +253,8 @@ def create_category_color_map(
         import matplotlib.cm as cm
         import matplotlib.colors as mcolors
     except ImportError:
-        raise ImportError("matplotlib is required. Install with: pip install matplotlib")
+        raise ImportError(
+            "matplotlib is required. Install with: pip install matplotlib")
 
     # Get unique categories
     unique_categories = list(set(category_mapping.values()))
@@ -262,13 +272,13 @@ def create_category_color_map(
     green_shades = [
         (0.0, 0.5, 0.0, 1.0),      # Dark green
         (0.0, 0.7, 0.0, 1.0),      # Medium-dark green
-        (0.133, 0.545, 0.133, 1.0), # Forest green
+        (0.133, 0.545, 0.133, 1.0),  # Forest green
         (0.0, 0.8, 0.0, 1.0),      # Bright green
-        (0.196, 0.804, 0.196, 1.0), # Lime green
+        (0.196, 0.804, 0.196, 1.0),  # Lime green
         (0.486, 0.988, 0.0, 1.0),  # Lawn green
         (0.0, 1.0, 0.0, 1.0),      # Pure green
-        (0.564, 0.933, 0.564, 1.0), # Light green
-        (0.596, 0.984, 0.596, 1.0), # Pale green
+        (0.564, 0.933, 0.564, 1.0),  # Light green
+        (0.596, 0.984, 0.596, 1.0),  # Pale green
     ]
 
     # Create color mapping
@@ -283,7 +293,8 @@ def create_category_color_map(
             category_colors.append(all_colors[idx % len(all_colors)])
 
     colormap = mcolors.ListedColormap(category_colors[:n_categories])
-    category_to_color = {cat: colormap(i) for i, cat in enumerate(unique_categories)}
+    category_to_color = {cat: colormap(i)
+                         for i, cat in enumerate(unique_categories)}
 
     # Map each term to its color
     colors = [category_to_color.get(category_mapping.get(label, 'Unknown'), 'gray')

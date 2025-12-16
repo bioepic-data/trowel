@@ -137,7 +137,8 @@ def compute_distance_matrix(
     try:
         from scipy.spatial import distance_matrix
     except ImportError:
-        raise ImportError("scipy is required for this function. Install with: pip install scipy")
+        raise ImportError(
+            "scipy is required for this function. Install with: pip install scipy")
 
     vectors_array = np.array(vectors)
     distances = distance_matrix(vectors_array, vectors_array)

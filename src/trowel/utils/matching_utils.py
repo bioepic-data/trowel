@@ -9,11 +9,14 @@ try:
     FUZZY_AVAILABLE = True
 except ImportError:
     FUZZY_AVAILABLE = False
-    logging.warning("rapidfuzz package not available; fuzzy matching will be disabled.")
-    logging.warning("To enable fuzzy matching, install rapidfuzz: pip install rapidfuzz")
+    logging.warning(
+        "rapidfuzz package not available; fuzzy matching will be disabled.")
+    logging.warning(
+        "To enable fuzzy matching, install rapidfuzz: pip install rapidfuzz")
 
-def match_terms(tsv_file_path: str, term_list_path: str, output_path: str = None, 
-             fuzzy_match: bool = False, similarity_threshold: float = 80.0) -> Optional[str]:
+
+def match_terms(tsv_file_path: str, term_list_path: str, output_path: str = None,
+                fuzzy_match: bool = False, similarity_threshold: float = 80.0) -> Optional[str]:
     """Match terms from a TSV file against a list of terms in another file.
 
     This function takes two files:
@@ -22,7 +25,7 @@ def match_terms(tsv_file_path: str, term_list_path: str, output_path: str = None
 
     It then produces a new file containing all terms from the first file with a new column
     indicating whether there was an exact match in the second file, and what the match was.
-    
+
     If fuzzy matching is enabled, it will also look for approximate matches when an exact match
     is not found, using the Levenshtein distance algorithm.
 
@@ -54,9 +57,10 @@ def match_terms(tsv_file_path: str, term_list_path: str, output_path: str = None
     # Read the term list file into a set for O(1) lookups
     with open(term_list_path, 'r') as f:
         term_list = {line.strip() for line in f if line.strip()}
-    
+
     # Convert to list for fuzzy matching if needed
-    term_list_for_fuzzy = list(term_list) if fuzzy_match and FUZZY_AVAILABLE else []
+    term_list_for_fuzzy = list(
+        term_list) if fuzzy_match and FUZZY_AVAILABLE else []
 
     # Process the TSV file using polars for efficiency
     try:
@@ -74,23 +78,23 @@ def match_terms(tsv_file_path: str, term_list_path: str, output_path: str = None
         # Create new columns for match status and matched term
         def match_term(term):
             term_str = str(term).strip()
-            
+
             # Try exact match first
             if term_str in term_list:
                 return (True, term_str, 100.0, "exact")
-            
+
             # If fuzzy matching is enabled and the library is available, try that
             if fuzzy_match and FUZZY_AVAILABLE and term_list_for_fuzzy:
                 # Find the best match using rapidfuzz
                 best_match, score, _ = process.extractOne(
-                    term_str, 
+                    term_str,
                     term_list_for_fuzzy,
                     scorer=fuzz.ratio
                 )
-                
+
                 if score >= similarity_threshold:
                     return (True, best_match, score, "fuzzy")
-            
+
             # No match found
             return (False, "", 0.0, "none")
 
@@ -111,12 +115,14 @@ def match_terms(tsv_file_path: str, term_list_path: str, output_path: str = None
 
         # Write the result to the output file
         df.write_csv(output_path, separator='\t')
-        
-        logging.info(f"Processed {len(df)} terms with {sum(match_status)} matches")
+
+        logging.info(
+            f"Processed {len(df)} terms with {sum(match_status)} matches")
         exact_matches = sum(1 for t in match_types if t == "exact")
         fuzzy_matches = sum(1 for t in match_types if t == "fuzzy")
         if fuzzy_match and FUZZY_AVAILABLE:
-            logging.info(f"Found {exact_matches} exact matches and {fuzzy_matches} fuzzy matches")
+            logging.info(
+                f"Found {exact_matches} exact matches and {fuzzy_matches} fuzzy matches")
 
         return output_path
 

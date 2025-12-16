@@ -44,14 +44,15 @@ def prepare_embedding_csv(
             writer = csv.writer(outfile)
             # Write only the selected header labels
             writer.writerow([full_header[i] if i < len(full_header) else ''
-                           for i in column_indices])
+                             for i in column_indices])
 
             # Write selected columns for each data row
             for row in data_rows:
                 writer.writerow([row[i] if i < len(row) else ''
-                               for i in column_indices])
+                                 for i in column_indices])
 
-    logging.info(f"Prepared CSV with selected columns written to {output_file}")
+    logging.info(
+        f"Prepared CSV with selected columns written to {output_file}")
 
 
 def load_embeddings_from_csv(
@@ -90,8 +91,8 @@ def load_embeddings_from_csv(
 
                 # Get label from metadata, with fallbacks
                 label = metadata.get('LABEL',
-                         metadata.get('ID',
-                         metadata.get('name', 'Unknown')))
+                                     metadata.get('ID',
+                                                  metadata.get('name', 'Unknown')))
 
                 # Extract embedding values - everything after the dict and comma
                 embedding_str = line[dict_end + 1:]  # Skip the comma after }
@@ -105,7 +106,8 @@ def load_embeddings_from_csv(
                 logging.warning(f"Error parsing line {line_num}: {e}")
                 continue
 
-    logging.info(f"Loaded {len(labels)} terms with embeddings from {embedding_file}")
+    logging.info(
+        f"Loaded {len(labels)} terms with embeddings from {embedding_file}")
     if vectors:
         logging.info(f"Embedding dimension: {len(vectors[0])}")
 
@@ -130,7 +132,8 @@ def load_embeddings_from_duckdb(
     try:
         import duckdb
     except ImportError:
-        raise ImportError("duckdb is required for this function. Install with: pip install duckdb")
+        raise ImportError(
+            "duckdb is required for this function. Install with: pip install duckdb")
 
     if exclude_ids is None:
         exclude_ids = []
@@ -138,7 +141,8 @@ def load_embeddings_from_duckdb(
     conn = duckdb.connect(db_path)
 
     # Build the WHERE clause
-    exclude_clause = " AND ".join([f"id != '{exclude_id}'" for exclude_id in exclude_ids])
+    exclude_clause = " AND ".join(
+        [f"id != '{exclude_id}'" for exclude_id in exclude_ids])
     if exclude_clause:
         exclude_clause = " AND " + exclude_clause
 
@@ -167,7 +171,8 @@ def load_embeddings_from_duckdb(
         labels.append(term_id)
         vectors.append(np.array(embedding))
 
-    logging.info(f"Loaded {len(labels)} terms with embeddings from {collection_name}")
+    logging.info(
+        f"Loaded {len(labels)} terms with embeddings from {collection_name}")
     if vectors:
         logging.info(f"Embedding dimension: {len(vectors[0])}")
 
@@ -211,7 +216,8 @@ def get_top_level_categories(
 
     # Find column index for category
     if category_column not in header:
-        logging.warning(f"Category column '{category_column}' not found in header")
+        logging.warning(
+            f"Category column '{category_column}' not found in header")
         category_col_idx = None
     else:
         category_col_idx = header.index(category_column)
@@ -220,7 +226,8 @@ def get_top_level_categories(
     for row in data_rows:
         if len(row) > id_column:
             term_id = row[id_column].strip()
-            label = row[label_column].strip() if len(row) > label_column else ''
+            label = row[label_column].strip() if len(
+                row) > label_column else ''
 
             if term_id:
                 id_to_label[term_id] = label
@@ -276,6 +283,7 @@ def get_top_level_categories(
         term_to_top_level[term_id] = top_level
 
     logging.info(f"Built category mappings for {len(term_to_top_level)} terms")
-    logging.info(f"Found {len(set(term_to_top_level.values()))} unique top-level categories")
+    logging.info(
+        f"Found {len(set(term_to_top_level.values()))} unique top-level categories")
 
     return id_to_label, term_to_top_level

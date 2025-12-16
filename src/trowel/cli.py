@@ -137,12 +137,15 @@ def get_essdive_variables(path, outpath, workers):
         # Try in the output directory if not found with filetable
         results_path = os.path.join(outpath, "results.tsv")
         if not os.path.exists(results_path):
-            logging.warning("Results file not found. Dataset mapping will not be available.")
+            logging.warning(
+                "Results file not found. Dataset mapping will not be available.")
             results_path = None
 
-    variable_names_path = get_variable_names(filetable_path, results_path, outpath, max_workers=workers)
+    variable_names_path = get_variable_names(
+        filetable_path, results_path, outpath, max_workers=workers)
 
-    logging.info(f"Variable names and keywords written to {variable_names_path}")
+    logging.info(
+        f"Variable names and keywords written to {variable_names_path}")
 
 # TODO: incorporate LLM embedding similarity matching for terms
 
@@ -215,7 +218,8 @@ def prepare_embeddings(input_file, output_file, columns, skip_rows):
         logging.error("Column indices must be comma-separated integers.")
         sys.exit(1)
 
-    prepare_embedding_csv(input_file, output_file, column_indices, skip_rows=skip_rows)
+    prepare_embedding_csv(input_file, output_file,
+                          column_indices, skip_rows=skip_rows)
     logging.info(f"Prepared CSV written to {output_file}")
 
 
@@ -262,10 +266,11 @@ def load_embeddings(embedding_file, output_dir):
     with open(results_file, 'w') as f:
         json.dump(results, f, indent=2)
 
-    logging.info(f"Embedding statistics: {len(labels)} terms, dimension {len(vectors[0]) if vectors else 0}")
+    logging.info(
+        f"Embedding statistics: {len(labels)} terms, dimension {len(vectors[0]) if vectors else 0}")
     logging.info(f"Similarity stats - min: {results['similarity_stats']['min']:.4f}, "
-                f"max: {results['similarity_stats']['max']:.4f}, "
-                f"mean: {results['similarity_stats']['mean']:.4f}")
+                 f"max: {results['similarity_stats']['max']:.4f}, "
+                 f"mean: {results['similarity_stats']['mean']:.4f}")
     logging.info(f"Results saved to {results_file}")
 
 
@@ -337,10 +342,10 @@ def visualize_clusters(embedding_file, method, output_file, label_interval):
 
     if method == 'pca':
         plot_clusters_pca(labels, vectors, output_file=output_file, title=title,
-                         label_interval=label_interval)
+                          label_interval=label_interval)
     else:  # tsne
         plot_clusters_tsne(labels, vectors, output_file=output_file, title=title,
-                          label_interval=label_interval)
+                           label_interval=label_interval)
 
     if output_file:
         logging.info(f"Plot saved to {output_file}")
@@ -368,18 +373,20 @@ def visualize_by_category(source_csv, embedding_file, output_file, label_interva
         sys.exit(1)
 
     logging.info(f"Loading category mappings from {source_csv}...")
-    id_to_label, id_to_top_level = get_top_level_categories(source_csv, skip_rows=1)
+    id_to_label, id_to_top_level = get_top_level_categories(
+        source_csv, skip_rows=1)
 
     logging.info(f"Loading embeddings from {embedding_file}...")
     labels, vectors = load_embeddings_from_csv(embedding_file)
 
     logging.info("Creating category-based color map...")
-    colors, category_to_color = create_category_color_map(labels, id_to_top_level)
+    colors, category_to_color = create_category_color_map(
+        labels, id_to_top_level)
 
     title = "Term Clustering by Category"
 
     plot_clusters_pca(labels, vectors, colors=colors, output_file=output_file,
-                     title=title, label_interval=label_interval)
+                      title=title, label_interval=label_interval)
 
     if output_file:
         logging.info(f"Plot saved to {output_file}")
@@ -408,7 +415,7 @@ def visualize_heatmap(embedding_file, num_terms, output_file):
     similarity_matrix = compute_cosine_similarity(vectors)
 
     plot_similarity_heatmap(labels, similarity_matrix, num_terms=num_terms,
-                           output_file=output_file)
+                            output_file=output_file)
 
     if output_file:
         logging.info(f"Heatmap saved to {output_file}")
@@ -428,7 +435,8 @@ def cross_collection_similarity(bervo_embeddings, new_embeddings, top_n, output_
         trowel embeddings cross-collection-similarity -b bervo_embeds.csv -n new_vars_embeds.csv -t 25
     """
     if not os.path.exists(bervo_embeddings):
-        logging.error(f"BERVO embedding file {bervo_embeddings} does not exist.")
+        logging.error(
+            f"BERVO embedding file {bervo_embeddings} does not exist.")
         sys.exit(1)
 
     if not os.path.exists(new_embeddings):
@@ -459,7 +467,8 @@ def cross_collection_similarity(bervo_embeddings, new_embeddings, top_n, output_
             f.write(f"Top {top_n} BERVO-to-new-variable pairs by similarity\n")
             f.write("-" * 90 + "\n")
             for rank, (term1, term2, score) in enumerate(top_pairs, 1):
-                f.write(f"{rank:2d}. {term1:40s} <-> {term2:40s} (similarity: {score:.4f})\n")
+                f.write(
+                    f"{rank:2d}. {term1:40s} <-> {term2:40s} (similarity: {score:.4f})\n")
         logging.info(f"Results written to {output_file}")
 
 
