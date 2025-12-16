@@ -5,6 +5,7 @@ import os
 import sys
 
 import click
+import requests
 from trowel.wrappers.essdive import get_metadata, get_variable_names
 from trowel.utils.matching_utils import match_terms
 from trowel.utils.embedding_utils import (
@@ -66,6 +67,39 @@ def main():
     formatter = logging.Formatter('%(levelname)s: %(message)s')
     ch.setFormatter(formatter)
     logger.addHandler(ch)
+
+
+@main.command()
+@click.option('-o', '--output', help='Output file path for BERVO CSV.', required=False, default='bervo.csv')
+def get_bervo(output):
+    """Download the BERVO ontology from the official source.
+
+    BERVO (Biogeochemical and Ecological Processes Ontology) is a comprehensive
+    ontology for environmental science variables and measurements.
+
+    Example:
+        trowel get-bervo -o bervo.csv
+        trowel get-bervo  # Downloads to bervo.csv by default
+    """
+    bervo_url = 'https://docs.google.com/spreadsheets/d/1mS8VVtr-m24vZ7nQUtUbQrN8r-UBy3AwRzTfQsmwVL8/export?exportFormat=csv'
+
+    logging.info(f"Downloading BERVO ontology from {bervo_url}...")
+
+    try:
+        resp = requests.get(bervo_url, stream=True)
+        resp.raise_for_status()
+
+        with open(output, 'wb') as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        logging.info(f"BERVO ontology downloaded successfully to {output}")
+        logging.info(f"File size: {os.path.getsize(output)} bytes")
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to download BERVO ontology: {e}")
+        sys.exit(1)
 
 
 @main.command()
