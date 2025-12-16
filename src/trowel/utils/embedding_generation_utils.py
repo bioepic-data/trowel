@@ -1,7 +1,6 @@
 """Utilities for generating embeddings using CurateGPT."""
 
 import csv
-import json
 import logging
 import os
 from typing import List, Optional, Tuple
@@ -15,20 +14,20 @@ __all__ = [
 def generate_embeddings_with_curategpt(
     csv_path: str,
     collection_name: str = "embeddings",
-    db_path: str = "./backup/curategpt_db",
+    db_path: str = "./backup/db.duckdb",
     text_fields: Optional[List[str]] = None,
     limit: Optional[int] = None,
     skip: int = 0,
 ) -> Tuple[str, int]:
-    """Generate embeddings for CSV data using CurateGPT.
+    """Generate embeddings for CSV data using CurateGPT with DuckDB backend.
 
-    Initializes a CurateGPT store with the provided CSV file and generates
+    Initializes a CurateGPT store with DuckDB backend and generates
     vector embeddings for each row using OpenAI's text-embedding-ada-002 model.
 
     Args:
         csv_path: Path to the CSV file containing data to embed
         collection_name: Name of the collection to store embeddings (default: "embeddings")
-        db_path: Path where the vector database will be stored (default: "./backup/curategpt_db")
+        db_path: Path to DuckDB file for storage (default: "./backup/db.duckdb")
         text_fields: List of CSV column names to use for generating embeddings.
                     If None, uses all columns concatenated.
         limit: Maximum number of rows to embed (for testing/sampling)
@@ -39,7 +38,7 @@ def generate_embeddings_with_curategpt(
 
     Raises:
         FileNotFoundError: If the CSV file does not exist
-        ImportError: If curategpt is not installed or OPENAI_API_KEY is not set
+        ImportError: If curategpt or duckdb is not installed or OPENAI_API_KEY is not set
     """
     try:
         from curategpt.store import get_store
@@ -47,6 +46,14 @@ def generate_embeddings_with_curategpt(
         raise ImportError(
             "curategpt is required for embedding generation. "
             "Install with: pip install curategpt"
+        )
+
+    try:
+        import duckdb
+    except ImportError:
+        raise ImportError(
+            "duckdb is required for embedding storage. "
+            "Install with: pip install duckdb"
         )
 
     if not os.path.exists(csv_path):
@@ -61,10 +68,11 @@ def generate_embeddings_with_curategpt(
         )
 
     # Ensure database directory exists
-    os.makedirs(db_path, exist_ok=True)
+    db_dir = os.path.dirname(os.path.abspath(db_path)) or "."
+    os.makedirs(db_dir, exist_ok=True)
 
-    logging.info(f"Initializing CurateGPT store at {db_path}...")
-    store = get_store("chromadb", db_path)
+    logging.info(f"Initializing CurateGPT store with DuckDB at {db_path}...")
+    store = get_store("duckdb", db_path)
 
     logging.info(f"Loading data from {csv_path}...")
     rows_read = 0

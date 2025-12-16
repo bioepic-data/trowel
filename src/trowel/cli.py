@@ -264,7 +264,7 @@ def prepare_embeddings(input_file, output_file, columns, skip_rows):
 @embeddings.command()
 @click.option('-i', '--input', 'input_file', help='Path to prepared CSV file with data to embed.', required=True)
 @click.option('-c', '--collection', help='Name of the collection (default: "embeddings").', required=False, default='embeddings')
-@click.option('-d', '--db-path', help='Path where the vector database will be stored (default: "./backup/curategpt_db").', required=False, default='./backup/curategpt_db')
+@click.option('-d', '--db-path', help='Path to DuckDB file for storage (default: "./backup/db.duckdb").', required=False, default='./backup/db.duckdb')
 @click.option('-f', '--text-fields', help='Comma-separated list of column names to use for embeddings. If not specified, uses all columns.', required=False)
 @click.option('-l', '--limit', type=int, default=None, help='Maximum number of rows to embed (for testing/sampling).')
 @click.option('-s', '--skip', type=int, default=0, help='Number of rows to skip from the beginning.')
@@ -275,19 +275,20 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
     This command:
     1. Reads a prepared CSV file
     2. Generates vector embeddings using OpenAI's text-embedding-ada-002 model
-    3. Stores embeddings in a local vector database (ChromaDB with DuckDB backend)
+    3. Stores embeddings in a DuckDB database
     4. Optionally exports results to CSV for downstream analysis
 
     REQUIREMENTS:
     - OPENAI_API_KEY environment variable must be set
     - Install CurateGPT: pip install curategpt
+    - Install DuckDB: pip install duckdb
 
     Example:
         # Basic usage - embed a prepared file
         trowel embeddings generate-embeddings -i bervo_prepared.csv
 
         # Specify collection and database paths
-        trowel embeddings generate-embeddings -i bervo_prepared.csv -c bervo -d backup/embeddings_db
+        trowel embeddings generate-embeddings -i bervo_prepared.csv -c bervo -d backup/bervo.duckdb
 
         # Test with a subset of rows
         trowel embeddings generate-embeddings -i bervo_prepared.csv -l 1000

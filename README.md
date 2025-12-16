@@ -176,11 +176,12 @@ trowel embeddings prepare-embeddings \
 
 Generate vector embeddings for CSV data using CurateGPT and OpenAI's embedding API.
 
-This command handles the complete embedding pipeline: reading your prepared data, calling OpenAI's `text-embedding-ada-002` model for each row, storing embeddings in a local vector database, and optionally exporting results to CSV for downstream analysis.
+This command handles the complete embedding pipeline: reading your prepared data, calling OpenAI's `text-embedding-ada-002` model for each row, storing embeddings in a DuckDB database, and optionally exporting results to CSV for downstream analysis.
 
 **Requirements:**
 - `OPENAI_API_KEY` environment variable must be set
 - CurateGPT installed: `pip install curategpt`
+- DuckDB installed: `pip install duckdb`
 
 ```bash
 # Basic usage - embed a prepared file
@@ -190,7 +191,7 @@ trowel embeddings generate-embeddings -i bervo_prepared.csv
 trowel embeddings generate-embeddings \
   -i bervo_prepared.csv \
   -c bervo \
-  -d backup/embeddings_db
+  -d backup/bervo.duckdb
 
 # Test with subset of rows
 trowel embeddings generate-embeddings \
@@ -210,15 +211,15 @@ trowel embeddings generate-embeddings \
 
 **Options:**
 - `-i, --input TEXT` - Path to prepared CSV file (required)
-- `-c, --collection TEXT` - Collection name in vector database (default: "embeddings")
-- `-d, --db-path TEXT` - Path for vector database storage (default: "./backup/curategpt_db")
+- `-c, --collection TEXT` - Collection name in DuckDB (default: "embeddings")
+- `-d, --db-path TEXT` - Path to DuckDB file for storage (default: "./backup/db.duckdb")
 - `-f, --text-fields TEXT` - Comma-separated column names to use for embeddings. If not specified, uses all columns
 - `-l, --limit INTEGER` - Maximum rows to embed (useful for testing large files)
 - `-s, --skip INTEGER` - Number of rows to skip from beginning
 - `-e, --export TEXT` - Optional: export embeddings to CSV file after generation
 
 **Output:**
-- Vector database stored at `--db-path` location (default: `./backup/curategpt_db`)
+- DuckDB database stored at `--db-path` location (default: `./backup/db.duckdb`)
 - If `--export` specified: CSV file with embeddings for use with other commands
 
 **Note on Costs:**
@@ -412,7 +413,7 @@ trowel embeddings prepare-embeddings \
 trowel embeddings generate-embeddings \
   -i bervo_prepared.csv \
   -c bervo \
-  -d backup/curategpt_db \
+  -d backup/bervo.duckdb \
   -e backup/bervo_embeds.csv
 
 # 4. Find similar terms
@@ -455,13 +456,13 @@ trowel embeddings prepare-embeddings \
 trowel embeddings generate-embeddings \
   -i ontology1_prepared.csv \
   -c ontology1 \
-  -d backup/ont1_db \
+  -d backup/ontology1.duckdb \
   -e backup/ont1_embeds.csv
 
 trowel embeddings generate-embeddings \
   -i ontology2_prepared.csv \
   -c ontology2 \
-  -d backup/ont2_db \
+  -d backup/ontology2.duckdb \
   -e backup/ont2_embeds.csv
 
 # 4. Compare the ontologies
@@ -481,11 +482,11 @@ Pre-computed embeddings can be stored in the `backup/` directory and automatical
 1. **Generate embeddings once** using the integrated command and save to `backup/`:
 ```bash
 # Generate embeddings using trowel (handles OpenAI API calls internally)
-# This saves both the vector database AND exports to CSV
+# This saves both the DuckDB database AND exports to CSV
 trowel embeddings generate-embeddings \
   -i bervo_prepared.csv \
   -c bervo \
-  -d backup/curategpt_db \
+  -d backup/bervo.duckdb \
   -e backup/bervo_embeds.csv
 ```
 
