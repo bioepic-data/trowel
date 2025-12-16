@@ -7,6 +7,23 @@ import sys
 import click
 from trowel.wrappers.essdive import get_metadata, get_variable_names
 from trowel.utils.matching_utils import match_terms
+from trowel.utils.embedding_utils import (
+    prepare_embedding_csv,
+    load_embeddings_from_csv,
+    load_embeddings_from_duckdb,
+    get_top_level_categories,
+)
+from trowel.utils.similarity_utils import (
+    compute_cosine_similarity,
+    find_similar_terms,
+    find_similar_terms_cross_collection,
+)
+from trowel.utils.visualization_utils import (
+    plot_clusters_pca,
+    plot_clusters_tsne,
+    plot_similarity_heatmap,
+    create_category_color_map,
+)
 
 __all__ = [
     "main",
@@ -169,6 +186,281 @@ def match_term_lists(terms_file, list_file, output, fuzzy, similarity_threshold)
     else:
         logging.error("Failed to match terms between files.")
         sys.exit(1)
+
+
+@main.group()
+def embeddings():
+    """Commands for working with embeddings and term clustering."""
+    pass
+
+
+@embeddings.command()
+@click.option('-i', '--input', 'input_file', help='Path to input CSV file.', required=True)
+@click.option('-o', '--output', 'output_file', help='Path to output CSV file.', required=True)
+@click.option('-c', '--columns', help='Comma-separated list of column indices to extract (0-indexed).', required=True)
+@click.option('--skip-rows', type=int, default=0, help='Number of header rows to skip.')
+def prepare_embeddings(input_file, output_file, columns, skip_rows):
+    """Prepare a CSV file for embedding by selecting specific columns.
+
+    Example:
+        trowel embeddings prepare-embeddings -i bervo.csv -o bervo_prepared.csv -c 0,1,6,12
+    """
+    if not os.path.exists(input_file):
+        logging.error(f"Input file {input_file} does not exist.")
+        sys.exit(1)
+
+    try:
+        column_indices = [int(x.strip()) for x in columns.split(',')]
+    except ValueError:
+        logging.error("Column indices must be comma-separated integers.")
+        sys.exit(1)
+
+    prepare_embedding_csv(input_file, output_file, column_indices, skip_rows=skip_rows)
+    logging.info(f"Prepared CSV written to {output_file}")
+
+
+@embeddings.command()
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-o', '--output', 'output_dir', help='Directory for output files.', required=False, default='.')
+def load_embeddings(embedding_file, output_dir):
+    """Load embeddings from a CurateGPT-generated CSV file and compute similarity metrics.
+
+    This command:
+    1. Loads embeddings and labels
+    2. Computes cosine similarity matrix
+    3. Saves results to files for downstream analysis
+
+    Example:
+        trowel embeddings load-embeddings -e bervo_embeds.csv -o ./analysis
+    """
+    if not os.path.exists(embedding_file):
+        logging.error(f"Embedding file {embedding_file} does not exist.")
+        sys.exit(1)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    logging.info(f"Loading embeddings from {embedding_file}...")
+    labels, vectors = load_embeddings_from_csv(embedding_file)
+
+    logging.info("Computing cosine similarity matrix...")
+    similarity_matrix = compute_cosine_similarity(vectors)
+
+    # Save results
+    import json
+    results = {
+        'num_terms': len(labels),
+        'embedding_dimension': len(vectors[0]) if vectors else 0,
+        'similarity_stats': {
+            'min': float(similarity_matrix.min()),
+            'max': float(similarity_matrix.max()),
+            'mean': float(similarity_matrix.mean()),
+        }
+    }
+
+    results_file = os.path.join(output_dir, 'embedding_stats.json')
+    with open(results_file, 'w') as f:
+        json.dump(results, f, indent=2)
+
+    logging.info(f"Embedding statistics: {len(labels)} terms, dimension {len(vectors[0]) if vectors else 0}")
+    logging.info(f"Similarity stats - min: {results['similarity_stats']['min']:.4f}, "
+                f"max: {results['similarity_stats']['max']:.4f}, "
+                f"mean: {results['similarity_stats']['mean']:.4f}")
+    logging.info(f"Results saved to {results_file}")
+
+
+@embeddings.command()
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-q', '--query', help='Query term to find similar terms for.', required=True)
+@click.option('-n', '--top-n', type=int, default=10, help='Number of similar terms to return.')
+@click.option('-o', '--output', 'output_file', help='Optional output file for results.', required=False)
+def find_similar(embedding_file, query, top_n, output_file):
+    """Find the most similar terms to a query term.
+
+    Example:
+        trowel embeddings find-similar -e bervo_embeds.csv -q BERVO:0000026 -n 10
+    """
+    if not os.path.exists(embedding_file):
+        logging.error(f"Embedding file {embedding_file} does not exist.")
+        sys.exit(1)
+
+    logging.info(f"Loading embeddings from {embedding_file}...")
+    labels, vectors = load_embeddings_from_csv(embedding_file)
+
+    logging.info("Computing cosine similarity matrix...")
+    similarity_matrix = compute_cosine_similarity(vectors)
+
+    logging.info(f"Finding {top_n} terms most similar to '{query}'...")
+    similar = find_similar_terms(query, labels, similarity_matrix, top_n=top_n)
+
+    if not similar:
+        logging.warning(f"No similar terms found for '{query}'.")
+        sys.exit(1)
+
+    # Print results
+    print(f"\nTop {top_n} terms most similar to '{query}':")
+    print("-" * 70)
+    for i, (term, score) in enumerate(similar, 1):
+        print(f"{i:2d}. {term:40s} (similarity: {score:.4f})")
+
+    # Optionally write to file
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(f"Top {top_n} terms most similar to '{query}'\n")
+            f.write("-" * 70 + "\n")
+            for i, (term, score) in enumerate(similar, 1):
+                f.write(f"{i:2d}. {term:40s} (similarity: {score:.4f})\n")
+        logging.info(f"Results written to {output_file}")
+
+
+@embeddings.command()
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-m', '--method', type=click.Choice(['pca', 'tsne']), default='pca',
+              help='Dimensionality reduction method.')
+@click.option('-o', '--output', 'output_file', help='Output file path for the plot.', required=False)
+@click.option('--label-interval', type=int, default=100, help='Interval for labeling points.')
+def visualize_clusters(embedding_file, method, output_file, label_interval):
+    """Visualize term clusters using dimensionality reduction.
+
+    Example:
+        trowel embeddings visualize-clusters -e bervo_embeds.csv -m pca -o clusters_pca.png
+        trowel embeddings visualize-clusters -e bervo_embeds.csv -m tsne -o clusters_tsne.png
+    """
+    if not os.path.exists(embedding_file):
+        logging.error(f"Embedding file {embedding_file} does not exist.")
+        sys.exit(1)
+
+    logging.info(f"Loading embeddings from {embedding_file}...")
+    labels, vectors = load_embeddings_from_csv(embedding_file)
+
+    title = f"Term Clustering using {method.upper()}"
+
+    if method == 'pca':
+        plot_clusters_pca(labels, vectors, output_file=output_file, title=title,
+                         label_interval=label_interval)
+    else:  # tsne
+        plot_clusters_tsne(labels, vectors, output_file=output_file, title=title,
+                          label_interval=label_interval)
+
+    if output_file:
+        logging.info(f"Plot saved to {output_file}")
+    else:
+        logging.info("Plot displayed.")
+
+
+@embeddings.command()
+@click.option('-s', '--source-csv', help='Path to source CSV with term definitions.', required=True)
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-o', '--output', 'output_file', help='Output file path for the plot.', required=False)
+@click.option('--label-interval', type=int, default=100, help='Interval for labeling points.')
+def visualize_by_category(source_csv, embedding_file, output_file, label_interval):
+    """Visualize term clusters colored by ontology category.
+
+    Example:
+        trowel embeddings visualize-by-category -s bervo.csv -e bervo_embeds.csv -o clusters_categorical.png
+    """
+    if not os.path.exists(source_csv):
+        logging.error(f"Source CSV {source_csv} does not exist.")
+        sys.exit(1)
+
+    if not os.path.exists(embedding_file):
+        logging.error(f"Embedding file {embedding_file} does not exist.")
+        sys.exit(1)
+
+    logging.info(f"Loading category mappings from {source_csv}...")
+    id_to_label, id_to_top_level = get_top_level_categories(source_csv, skip_rows=1)
+
+    logging.info(f"Loading embeddings from {embedding_file}...")
+    labels, vectors = load_embeddings_from_csv(embedding_file)
+
+    logging.info("Creating category-based color map...")
+    colors, category_to_color = create_category_color_map(labels, id_to_top_level)
+
+    title = "Term Clustering by Category"
+
+    plot_clusters_pca(labels, vectors, colors=colors, output_file=output_file,
+                     title=title, label_interval=label_interval)
+
+    if output_file:
+        logging.info(f"Plot saved to {output_file}")
+    else:
+        logging.info("Plot displayed.")
+
+
+@embeddings.command()
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-n', '--num-terms', type=int, default=50, help='Number of terms to include in heatmap.')
+@click.option('-o', '--output', 'output_file', help='Output file path for the heatmap.', required=False)
+def visualize_heatmap(embedding_file, num_terms, output_file):
+    """Visualize similarity as a heatmap for a subset of terms.
+
+    Example:
+        trowel embeddings visualize-heatmap -e bervo_embeds.csv -n 50 -o similarity_heatmap.png
+    """
+    if not os.path.exists(embedding_file):
+        logging.error(f"Embedding file {embedding_file} does not exist.")
+        sys.exit(1)
+
+    logging.info(f"Loading embeddings from {embedding_file}...")
+    labels, vectors = load_embeddings_from_csv(embedding_file)
+
+    logging.info("Computing cosine similarity matrix...")
+    similarity_matrix = compute_cosine_similarity(vectors)
+
+    plot_similarity_heatmap(labels, similarity_matrix, num_terms=num_terms,
+                           output_file=output_file)
+
+    if output_file:
+        logging.info(f"Heatmap saved to {output_file}")
+    else:
+        logging.info("Heatmap displayed.")
+
+
+@embeddings.command()
+@click.option('-b', '--bervo-embeddings', help='Path to BERVO embedding CSV file.', required=True)
+@click.option('-n', '--new-embeddings', help='Path to new terms embedding CSV file.', required=True)
+@click.option('-t', '--top-n', type=int, default=25, help='Number of top pairs to return.')
+@click.option('-o', '--output', 'output_file', help='Optional output file for results.', required=False)
+def cross_collection_similarity(bervo_embeddings, new_embeddings, top_n, output_file):
+    """Find the most similar term pairs between two collections.
+
+    Example:
+        trowel embeddings cross-collection-similarity -b bervo_embeds.csv -n new_vars_embeds.csv -t 25
+    """
+    if not os.path.exists(bervo_embeddings):
+        logging.error(f"BERVO embedding file {bervo_embeddings} does not exist.")
+        sys.exit(1)
+
+    if not os.path.exists(new_embeddings):
+        logging.error(f"New embeddings file {new_embeddings} does not exist.")
+        sys.exit(1)
+
+    logging.info("Loading embeddings...")
+    bervo_labels, bervo_vectors = load_embeddings_from_csv(bervo_embeddings)
+    new_labels, new_vectors = load_embeddings_from_csv(new_embeddings)
+
+    logging.info("Computing cross-collection similarity matrix...")
+    similarity_matrix = compute_cosine_similarity(bervo_vectors, new_vectors)
+
+    logging.info(f"Finding top {top_n} cross-collection similar pairs...")
+    top_pairs = find_similar_terms_cross_collection(
+        bervo_labels, new_labels, similarity_matrix, top_n=top_n
+    )
+
+    # Print results
+    print(f"\nTop {top_n} BERVO-to-new-variable pairs by similarity:")
+    print("-" * 90)
+    for rank, (term1, term2, score) in enumerate(top_pairs, 1):
+        print(f"{rank:2d}. {term1:40s} <-> {term2:40s} (similarity: {score:.4f})")
+
+    # Optionally write to file
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(f"Top {top_n} BERVO-to-new-variable pairs by similarity\n")
+            f.write("-" * 90 + "\n")
+            for rank, (term1, term2, score) in enumerate(top_pairs, 1):
+                f.write(f"{rank:2d}. {term1:40s} <-> {term2:40s} (similarity: {score:.4f})\n")
+        logging.info(f"Results written to {output_file}")
 
 
 if __name__ == "__main__":
