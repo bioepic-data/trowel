@@ -25,6 +25,10 @@ from trowel.utils.visualization_utils import (
     plot_similarity_heatmap,
     create_category_color_map,
 )
+from trowel.utils.embedding_generation_utils import (
+    generate_embeddings_with_curategpt,
+    export_embeddings_to_csv,
+)
 
 __all__ = [
     "main",
@@ -255,6 +259,102 @@ def prepare_embeddings(input_file, output_file, columns, skip_rows):
     prepare_embedding_csv(input_file, output_file,
                           column_indices, skip_rows=skip_rows)
     logging.info(f"Prepared CSV written to {output_file}")
+
+
+@embeddings.command()
+@click.option('-i', '--input', 'input_file', help='Path to prepared CSV file with data to embed.', required=True)
+@click.option('-c', '--collection', help='Name of the collection (default: "embeddings").', required=False, default='embeddings')
+@click.option('-d', '--db-path', help='Path where the vector database will be stored (default: "./backup/curategpt_db").', required=False, default='./backup/curategpt_db')
+@click.option('-f', '--text-fields', help='Comma-separated list of column names to use for embeddings. If not specified, uses all columns.', required=False)
+@click.option('-l', '--limit', type=int, default=None, help='Maximum number of rows to embed (for testing/sampling).')
+@click.option('-s', '--skip', type=int, default=0, help='Number of rows to skip from the beginning.')
+@click.option('-e', '--export', 'export_csv', help='Optional: export embeddings to CSV file after generation.', required=False)
+def generate_embeddings(input_file, collection, db_path, text_fields, limit, skip, export_csv):
+    """Generate embeddings for CSV data using CurateGPT with OpenAI API.
+
+    This command:
+    1. Reads a prepared CSV file
+    2. Generates vector embeddings using OpenAI's text-embedding-ada-002 model
+    3. Stores embeddings in a local vector database (ChromaDB with DuckDB backend)
+    4. Optionally exports results to CSV for downstream analysis
+
+    REQUIREMENTS:
+    - OPENAI_API_KEY environment variable must be set
+    - Install CurateGPT: pip install curategpt
+
+    Example:
+        # Basic usage - embed a prepared file
+        trowel embeddings generate-embeddings -i bervo_prepared.csv
+
+        # Specify collection and database paths
+        trowel embeddings generate-embeddings -i bervo_prepared.csv -c bervo -d backup/embeddings_db
+
+        # Test with a subset of rows
+        trowel embeddings generate-embeddings -i bervo_prepared.csv -l 1000
+
+        # Specify which columns to use for embeddings
+        trowel embeddings generate-embeddings -i bervo_prepared.csv -f "id,label,definition"
+
+        # Export to CSV for use with other commands
+        trowel embeddings generate-embeddings -i bervo_prepared.csv -e backup/bervo_embeds.csv
+    """
+    if not os.path.exists(input_file):
+        logging.error(f"Input file {input_file} does not exist.")
+        sys.exit(1)
+
+    # Check for OpenAI API key
+    if not os.getenv("OPENAI_API_KEY"):
+        logging.error(
+            "OPENAI_API_KEY environment variable is not set. "
+            "CurateGPT requires an OpenAI API key for embedding generation. "
+            "Set it with: export OPENAI_API_KEY='your-key-here'"
+        )
+        sys.exit(1)
+
+    # Parse text fields if provided
+    text_fields_list = None
+    if text_fields:
+        text_fields_list = [f.strip() for f in text_fields.split(',')]
+        logging.info(f"Using columns for embeddings: {text_fields_list}")
+
+    try:
+        logging.info("Starting embedding generation...")
+        db_path, num_embeddings = generate_embeddings_with_curategpt(
+            input_file,
+            collection_name=collection,
+            db_path=db_path,
+            text_fields=text_fields_list,
+            limit=limit,
+            skip=skip,
+        )
+
+        logging.info(f"Successfully generated {num_embeddings} embeddings")
+        logging.info(f"Database saved at: {db_path}")
+
+        # Optionally export to CSV
+        if export_csv:
+            logging.info(f"Exporting embeddings to {export_csv}...")
+            try:
+                num_exported = export_embeddings_to_csv(
+                    db_path,
+                    collection,
+                    export_csv,
+                )
+                logging.info(f"Exported {num_exported} embeddings to {export_csv}")
+                logging.info("You can now use these embeddings with other embedding commands:")
+                logging.info(f"  trowel embeddings find-similar -e {export_csv} -q <term>")
+                logging.info(f"  trowel embeddings visualize-clusters -e {export_csv} -m pca")
+            except Exception as e:
+                logging.error(f"Failed to export embeddings: {e}")
+                logging.warning("Database was created successfully, but CSV export failed")
+                sys.exit(1)
+
+    except ImportError as e:
+        logging.error(str(e))
+        sys.exit(1)
+    except Exception as e:
+        logging.error(f"Embedding generation failed: {e}")
+        sys.exit(1)
 
 
 @embeddings.command()

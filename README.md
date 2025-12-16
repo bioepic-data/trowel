@@ -172,6 +172,58 @@ trowel embeddings prepare-embeddings \
 - `-c, --columns TEXT` - Comma-separated column indices (0-indexed, required)
 - `--skip-rows INTEGER` - Number of header rows to skip (default: 0)
 
+#### generate-embeddings
+
+Generate vector embeddings for CSV data using CurateGPT and OpenAI's embedding API.
+
+This command handles the complete embedding pipeline: reading your prepared data, calling OpenAI's `text-embedding-ada-002` model for each row, storing embeddings in a local vector database, and optionally exporting results to CSV for downstream analysis.
+
+**Requirements:**
+- `OPENAI_API_KEY` environment variable must be set
+- CurateGPT installed: `pip install curategpt`
+
+```bash
+# Basic usage - embed a prepared file
+trowel embeddings generate-embeddings -i bervo_prepared.csv
+
+# Specify collection and database paths
+trowel embeddings generate-embeddings \
+  -i bervo_prepared.csv \
+  -c bervo \
+  -d backup/embeddings_db
+
+# Test with subset of rows
+trowel embeddings generate-embeddings \
+  -i bervo_prepared.csv \
+  -l 1000
+
+# Specify which columns to use for embeddings
+trowel embeddings generate-embeddings \
+  -i bervo_prepared.csv \
+  -f "id,label,definition"
+
+# Generate and export embeddings for use with other commands
+trowel embeddings generate-embeddings \
+  -i bervo_prepared.csv \
+  -e backup/bervo_embeds.csv
+```
+
+**Options:**
+- `-i, --input TEXT` - Path to prepared CSV file (required)
+- `-c, --collection TEXT` - Collection name in vector database (default: "embeddings")
+- `-d, --db-path TEXT` - Path for vector database storage (default: "./backup/curategpt_db")
+- `-f, --text-fields TEXT` - Comma-separated column names to use for embeddings. If not specified, uses all columns
+- `-l, --limit INTEGER` - Maximum rows to embed (useful for testing large files)
+- `-s, --skip INTEGER` - Number of rows to skip from beginning
+- `-e, --export TEXT` - Optional: export embeddings to CSV file after generation
+
+**Output:**
+- Vector database stored at `--db-path` location (default: `./backup/curategpt_db`)
+- If `--export` specified: CSV file with embeddings for use with other commands
+
+**Note on Costs:**
+Each embedding call uses OpenAI's API and incurs a small cost. The `text-embedding-ada-002` model is one of the most affordable OpenAI models. For BERVO (5000+ terms), expect costs of a few dollars.
+
 #### load-embeddings
 
 Load embeddings and compute statistics.
@@ -355,30 +407,22 @@ trowel embeddings prepare-embeddings \
   -c 0,1,6,12 \
   --skip-rows 1
 
-# 3. Generate embeddings (using CurateGPT)
-curategpt -vvv index \
+# 3. Generate embeddings (using OpenAI API via CurateGPT)
+# This generates embeddings and saves them to backup/ for reuse
+trowel embeddings generate-embeddings \
+  -i bervo_prepared.csv \
   -c bervo \
-  -D duckdb \
-  --batch-size 100 \
-  bervo_prepared.csv
+  -d backup/curategpt_db \
+  -e backup/bervo_embeds.csv
 
-# 4. Export embeddings to CSV
-duckdb -c "SELECT id, embeddings FROM bervo" \
-  db/db_file.duckdb > bervo_embeds.csv
-
-# 5. Analyze embeddings
-trowel embeddings load-embeddings \
-  -e bervo_embeds.csv \
-  -o ./analysis
-
-# 6. Find similar terms
+# 4. Find similar terms
 trowel embeddings find-similar \
   -e bervo_embeds.csv \
   -q BERVO:0000026 \
   -n 20 \
   -o similar_terms.txt
 
-# 7. Create visualizations
+# 5. Create visualizations
 trowel embeddings visualize-clusters \
   -e bervo_embeds.csv \
   -m pca \
@@ -396,7 +440,7 @@ trowel embeddings visualize-by-category \
 # 1. Download BERVO for comparison (optional)
 trowel get-bervo -o ontology1.csv
 
-# 2. Prepare and embed both ontologies
+# 2. Prepare both ontologies
 trowel embeddings prepare-embeddings \
   -i ontology1.csv \
   -o ontology1_prepared.csv \
@@ -407,34 +451,42 @@ trowel embeddings prepare-embeddings \
   -o ontology2_prepared.csv \
   -c 0,1,6 --skip-rows 1
 
-# 3. Generate embeddings (using CurateGPT for each)
-curategpt index -c ontology1 -D duckdb ontology1_prepared.csv
-curategpt index -c ontology2 -D duckdb ontology2_prepared.csv
+# 3. Generate embeddings for both (using OpenAI API via CurateGPT)
+trowel embeddings generate-embeddings \
+  -i ontology1_prepared.csv \
+  -c ontology1 \
+  -d backup/ont1_db \
+  -e backup/ont1_embeds.csv
 
-# 4. Export and compare
-duckdb -c "SELECT id, embeddings FROM ontology1" db/db_file.duckdb > ont1_embeds.csv
-duckdb -c "SELECT id, embeddings FROM ontology2" db/db_file.duckdb > ont2_embeds.csv
+trowel embeddings generate-embeddings \
+  -i ontology2_prepared.csv \
+  -c ontology2 \
+  -d backup/ont2_db \
+  -e backup/ont2_embeds.csv
 
+# 4. Compare the ontologies
 trowel embeddings cross-collection-similarity \
-  -b ont1_embeds.csv \
-  -n ont2_embeds.csv \
+  -b backup/ont1_embeds.csv \
+  -n backup/ont2_embeds.csv \
   -t 50 \
   -o ontology_comparison.txt
 ```
 
 ## Embedding Storage and Reuse
 
-Pre-computed embeddings can be stored in the `backup/` directory and automatically discovered by TROWEL's embedding commands.
+Pre-computed embeddings can be stored in the `backup/` directory and automatically discovered by TROWEL's embedding commands. This allows you to generate embeddings once and reuse them across many analysis sessions without regenerating them.
 
 ### Recommended Workflow
 
-1. **Generate embeddings once** and save to `backup/`:
+1. **Generate embeddings once** using the integrated command and save to `backup/`:
 ```bash
-# Generate embeddings using CurateGPT
-curategpt index -c bervo -D duckdb prepared.csv
-
-# Export to CSV and store in backup/ for reuse
-duckdb -c "SELECT id, embeddings FROM bervo" db/db_file.duckdb > backup/bervo_embeds.csv
+# Generate embeddings using trowel (handles OpenAI API calls internally)
+# This saves both the vector database AND exports to CSV
+trowel embeddings generate-embeddings \
+  -i bervo_prepared.csv \
+  -c bervo \
+  -d backup/curategpt_db \
+  -e backup/bervo_embeds.csv
 ```
 
 2. **Reuse embeddings for analysis** (no regeneration needed):
@@ -447,6 +499,13 @@ trowel embeddings visualize-clusters -e bervo_embeds.csv -m pca -l 5000 -o viz.p
 
 # All searches check: current dir → backup/ → auto-add .csv → backup/ with .csv
 ```
+
+### Why Store in backup/?
+
+- **Separation**: Keeps generated embeddings separate from source data
+- **Reusability**: Multiple workflows can reference the same embeddings
+- **Auto-discovery**: Commands automatically search `backup/` for files
+- **Backup**: Easy to version control and backup important embedding results
 
 ### File Resolution
 
