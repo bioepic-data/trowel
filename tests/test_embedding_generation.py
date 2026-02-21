@@ -134,6 +134,8 @@ class TestGenerateEmbeddingsWithCurategpt:
             assert num_embeddings == 3
             assert mock_get_store.called
             assert mock_store.insert.call_count == 3
+            first_inserted_row = mock_store.insert.call_args_list[0][0][0][0]
+            assert first_inserted_row["id"] == "BERVO:0000001"
 
     @patch("curategpt.store.get_store")
     def test_embedding_with_limit(self, mock_get_store, large_sample_csv, temp_dir):
@@ -176,7 +178,7 @@ class TestGenerateEmbeddingsWithCurategpt:
             assert num_embeddings == 50
             # Check that the first inserted row is the 101st (index 100)
             first_call_args = mock_store.insert.call_args_list[0]
-            assert first_call_args[0][0]["id"] == "BERVO:0000100"
+            assert first_call_args[0][0][0]["id"] == "BERVO:0000100"
 
     @patch("curategpt.store.get_store")
     def test_embedding_with_text_fields(self, mock_get_store, sample_csv, temp_dir):

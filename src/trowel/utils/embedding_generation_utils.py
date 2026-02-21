@@ -109,7 +109,7 @@ def generate_embeddings_with_curategpt(
                 try:
                     # Insert the row with its text content
                     # CurateGPT will automatically generate embeddings
-                    store.insert(row, collection=collection_name)
+                    store.insert([row], collection=collection_name)
                     rows_inserted += 1
 
                     if rows_inserted % 100 == 0:
