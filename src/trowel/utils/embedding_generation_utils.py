@@ -11,6 +11,34 @@ __all__ = [
 ]
 
 
+def _normalize_store_result(result, include_embeddings: bool = False) -> Optional[dict]:
+    """Normalize a CurateGPT search result into a dictionary row for CSV export.
+
+    CurateGPT backends do not return a single stable shape:
+    - Some return dictionaries directly.
+    - DuckDB returns tuples like (metadata_dict, distance, meta_dict).
+    """
+    if isinstance(result, dict):
+        return dict(result)
+
+    if isinstance(result, tuple):
+        doc = {}
+        if len(result) > 0 and isinstance(result[0], dict):
+            doc = dict(result[0])
+
+        if include_embeddings:
+            for item in result[1:]:
+                if isinstance(item, dict):
+                    embeddings = item.get("_embeddings", item.get("embeddings"))
+                    if embeddings is not None:
+                        doc["embeddings"] = embeddings
+                        break
+
+        return doc if doc else None
+
+    return None
+
+
 def generate_embeddings_with_curategpt(
     csv_path: str,
     collection_name: str = "embeddings",
@@ -179,7 +207,13 @@ def export_embeddings_to_csv(
         # Get field names for the collection. Some CurateGPT backends can return
         # empty field_names even when rows exist, so fall back to inferring them.
         field_names = store.field_names(collection=collection_name) or []
-        docs = list(store.find(where={}, collection=collection_name))
+        raw_results = list(store.find(where={}, collection=collection_name))
+        docs = []
+        for result in raw_results:
+            normalized = _normalize_store_result(
+                result, include_embeddings=include_embeddings)
+            if normalized is not None:
+                docs.append(normalized)
 
         if not field_names and docs:
             inferred_field_names = []
