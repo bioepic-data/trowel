@@ -389,3 +389,36 @@ class TestExportEmbeddingsToCSV:
             reader = csv.DictReader(f)
             rows = list(reader)
             assert len(rows) == 1000
+
+    @patch("curategpt.store.get_store")
+    def test_csv_export_handles_duckdb_tuple_results(self, mock_get_store, temp_dir):
+        """Test export when CurateGPT returns tuple-shaped DuckDB search results."""
+        db_path = os.path.join(temp_dir, "test.duckdb")
+        os.makedirs(db_path, exist_ok=True)
+
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
+        mock_store.field_names.return_value = []
+        mock_store.find.return_value = [
+            (
+                {"id": "BERVO:0000001", "label": "Temperature"},
+                0.0,
+                {"_embeddings": [0.1, 0.2], "documents": "doc1"},
+            ),
+            (
+                {"id": "BERVO:0000002", "label": "Humidity"},
+                0.0,
+                {"_embeddings": [0.3, 0.4], "documents": "doc2"},
+            ),
+        ]
+
+        output_path = os.path.join(temp_dir, "output.csv")
+        num_exported = export_embeddings_to_csv(
+            db_path, "test_collection", output_path)
+
+        assert num_exported == 2
+        with open(output_path, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 2
+            assert rows[0]["id"] == "BERVO:0000001"
