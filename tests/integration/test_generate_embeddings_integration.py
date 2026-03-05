@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from trowel.cli import main
+from trowel.utils.embedding_utils import load_embeddings_from_duckdb
 
 pytestmark = pytest.mark.integration
 
@@ -67,3 +68,14 @@ def test_generate_embeddings_workflow_end_to_end(tmp_path):
 
     assert len(rows) == 1
     assert rows[0].get("id") == "BERVO:9999999"
+
+    # Verify we can read embedding vectors back from DuckDB.
+    labels, vectors = load_embeddings_from_duckdb(
+        str(db_path),
+        collection_name,
+        exclude_ids=["__metadata__", "__venomx__"],
+    )
+    assert len(labels) == 1
+    assert labels[0] == "BERVO:9999999"
+    assert len(vectors) == 1
+    assert len(vectors[0]) > 0
