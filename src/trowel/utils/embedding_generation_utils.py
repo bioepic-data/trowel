@@ -96,14 +96,16 @@ def generate_embeddings_with_curategpt(
                 # Prepare text for embedding
                 if text_fields:
                     # Use only specified fields
-                    text_parts = [str(row.get(field, "")) for field in text_fields if field in row]
+                    text_parts = [str(row.get(field, ""))
+                                  for field in text_fields if field in row]
                     text_to_embed = " ".join(filter(None, text_parts))
                 else:
                     # Use all fields concatenated
                     text_to_embed = " ".join(str(v) for v in row.values() if v)
 
                 if not text_to_embed.strip():
-                    logging.warning(f"Row {idx} has no text to embed, skipping...")
+                    logging.warning(
+                        f"Row {idx} has no text to embed, skipping...")
                     continue
 
                 try:
@@ -119,8 +121,10 @@ def generate_embeddings_with_curategpt(
                     logging.warning(f"Failed to embed row {idx}: {e}")
                     continue
 
-        logging.info(f"Successfully embedded {rows_inserted} rows from {csv_path}")
-        logging.info(f"Embeddings stored in collection '{collection_name}' at {db_path}")
+        logging.info(
+            f"Successfully embedded {rows_inserted} rows from {csv_path}")
+        logging.info(
+            f"Embeddings stored in collection '{collection_name}' at {db_path}")
 
         return db_path, rows_inserted
 
@@ -166,31 +170,54 @@ def export_embeddings_to_csv(
         raise FileNotFoundError(f"Database path not found: {db_path}")
 
     logging.info(f"Opening CurateGPT database at {db_path}...")
-    store = get_store("chromadb", db_path)
+    store = get_store("duckdb", db_path)
 
-    logging.info(f"Retrieving all documents from collection '{collection_name}'...")
+    logging.info(
+        f"Retrieving all documents from collection '{collection_name}'...")
 
     try:
-        # Get field names for the collection
-        field_names = store.field_names(collection=collection_name)
+        # Get field names for the collection. Some CurateGPT backends can return
+        # empty field_names even when rows exist, so fall back to inferring them.
+        field_names = store.field_names(collection=collection_name) or []
+        docs = list(store.find(where={}, collection=collection_name))
+
+        if not field_names and docs:
+            inferred_field_names = []
+            for doc in docs:
+                for key in doc.keys():
+                    if key not in inferred_field_names:
+                        inferred_field_names.append(key)
+            field_names = inferred_field_names
+            logging.warning(
+                "store.field_names() returned empty for collection '%s'; "
+                "inferred field names from %d document(s)",
+                collection_name,
+                len(docs),
+            )
+
         if not field_names:
-            logging.warning(f"No documents found in collection '{collection_name}'")
+            logging.warning(
+                f"No documents found in collection '{collection_name}'")
             return 0
+
+        # If store metadata field names are stale/incomplete, add keys observed in docs
+        # to avoid DictWriter errors for extra fields.
+        for doc in docs:
+            for key in doc.keys():
+                if key not in field_names:
+                    field_names.append(key)
 
         # Export to CSV
         logging.info(f"Exporting to {output_path}...")
         rows_exported = 0
 
         # Ensure output directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(output_path))
+                    or ".", exist_ok=True)
 
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=field_names)
             writer.writeheader()
-
-            # Query all documents (without embedding vectors for now)
-            # CurateGPT's find() method returns all documents when called without filters
-            docs = store.find(where={}, collection=collection_name)
 
             for doc in docs:
                 writer.writerow(doc)
@@ -199,7 +226,8 @@ def export_embeddings_to_csv(
                 if rows_exported % 100 == 0:
                     logging.info(f"Exported {rows_exported} rows...")
 
-        logging.info(f"Successfully exported {rows_exported} rows to {output_path}")
+        logging.info(
+            f"Successfully exported {rows_exported} rows to {output_path}")
         return rows_exported
 
     except Exception as e:

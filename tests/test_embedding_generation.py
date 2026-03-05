@@ -279,6 +279,7 @@ class TestExportEmbeddingsToCSV:
 
         # Assertions
         assert num_exported == 2
+        mock_get_store.assert_called_with("duckdb", db_path)
         assert os.path.exists(output_path)
 
         # Check CSV content
@@ -318,6 +319,7 @@ class TestExportEmbeddingsToCSV:
         mock_store = MagicMock()
         mock_get_store.return_value = mock_store
         mock_store.field_names.return_value = None  # Indicates empty collection
+        mock_store.find.return_value = []
 
         output_path = os.path.join(temp_dir, "output.csv")
 
@@ -327,6 +329,32 @@ class TestExportEmbeddingsToCSV:
 
         # Assertions
         assert num_exported == 0
+
+    @patch("curategpt.store.get_store")
+    def test_csv_export_infers_field_names_when_store_returns_empty(self, mock_get_store, temp_dir):
+        """Test that export falls back to inferring field names from documents."""
+        db_path = os.path.join(temp_dir, "test.duckdb")
+        os.makedirs(db_path, exist_ok=True)
+
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
+        mock_store.field_names.return_value = []
+        mock_store.find.return_value = [
+            {"id": "BERVO:0000001", "label": "Temperature"},
+            {"id": "BERVO:0000002", "label": "Humidity"},
+        ]
+
+        output_path = os.path.join(temp_dir, "output.csv")
+        num_exported = export_embeddings_to_csv(
+            db_path, "test_collection", output_path)
+
+        assert num_exported == 2
+        assert os.path.exists(output_path)
+        with open(output_path, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 2
+            assert set(reader.fieldnames) == {"id", "label"}
 
     @patch("curategpt.store.get_store")
     def test_large_csv_export(self, mock_get_store, temp_dir):
