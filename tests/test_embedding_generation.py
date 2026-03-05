@@ -354,6 +354,7 @@ class TestExportEmbeddingsToCSV:
             reader = csv.DictReader(f)
             rows = list(reader)
             assert len(rows) == 2
+            assert reader.fieldnames is not None
             assert set(reader.fieldnames) == {"id", "label"}
 
     @patch("curategpt.store.get_store")
