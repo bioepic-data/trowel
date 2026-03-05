@@ -40,6 +40,17 @@ def generate_embeddings_with_curategpt(
         FileNotFoundError: If the CSV file does not exist
         ImportError: If curategpt or duckdb is not installed or OPENAI_API_KEY is not set
     """
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+    # Check for OpenAI API key
+    if not os.getenv("OPENAI_API_KEY"):
+        raise ImportError(
+            "OPENAI_API_KEY environment variable is not set. "
+            "CurateGPT requires an OpenAI API key for embedding generation. "
+            "Set it with: export OPENAI_API_KEY='your-key-here'"
+        )
+
     try:
         from curategpt.store import get_store
     except ImportError:
@@ -54,17 +65,6 @@ def generate_embeddings_with_curategpt(
         raise ImportError(
             "duckdb is required for embedding storage. "
             "Install with: pip install duckdb"
-        )
-
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"CSV file not found: {csv_path}")
-
-    # Check for OpenAI API key
-    if not os.getenv("OPENAI_API_KEY"):
-        raise ImportError(
-            "OPENAI_API_KEY environment variable is not set. "
-            "CurateGPT requires an OpenAI API key for embedding generation. "
-            "Set it with: export OPENAI_API_KEY='your-key-here'"
         )
 
     # Ensure database directory exists
@@ -158,6 +158,9 @@ def export_embeddings_to_csv(
         FileNotFoundError: If the database path does not exist
         ImportError: If curategpt is not installed
     """
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"Database path not found: {db_path}")
+
     try:
         from curategpt.store import get_store
     except ImportError:
@@ -165,9 +168,6 @@ def export_embeddings_to_csv(
             "curategpt is required for this operation. "
             "Install with: pip install curategpt"
         )
-
-    if not os.path.exists(db_path):
-        raise FileNotFoundError(f"Database path not found: {db_path}")
 
     logging.info(f"Opening CurateGPT database at {db_path}...")
     store = get_store("duckdb", db_path)
