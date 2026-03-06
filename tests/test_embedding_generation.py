@@ -112,7 +112,7 @@ class TestGenerateEmbeddingsWithCurategpt:
                     generate_embeddings_with_curategpt(
                         sample_csv, db_path=db_path)
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_successful_embedding_generation(self, mock_get_store, sample_csv, temp_dir):
         """Test successful embedding generation with mocked CurateGPT."""
         # Setup mocks
@@ -137,7 +137,7 @@ class TestGenerateEmbeddingsWithCurategpt:
             first_inserted_row = mock_store.insert.call_args_list[0][0][0][0]
             assert first_inserted_row["id"] == "BERVO:0000001"
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_embedding_with_limit(self, mock_get_store, large_sample_csv, temp_dir):
         """Test that limit parameter restricts number of embeddings."""
         mock_store = MagicMock()
@@ -157,7 +157,7 @@ class TestGenerateEmbeddingsWithCurategpt:
             assert num_embeddings == 10
             assert mock_store.insert.call_count == 10
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_embedding_with_skip(self, mock_get_store, large_sample_csv, temp_dir):
         """Test that skip parameter skips first N rows."""
         mock_store = MagicMock()
@@ -180,7 +180,7 @@ class TestGenerateEmbeddingsWithCurategpt:
             first_call_args = mock_store.insert.call_args_list[0]
             assert first_call_args[0][0][0]["id"] == "BERVO:0000100"
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_embedding_with_text_fields(self, mock_get_store, sample_csv, temp_dir):
         """Test that text_fields parameter is passed to store."""
         mock_store = MagicMock()
@@ -200,7 +200,7 @@ class TestGenerateEmbeddingsWithCurategpt:
             assert num_embeddings == 3
             assert mock_store.insert.call_count == 3
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_database_directory_creation(self, mock_get_store, sample_csv, temp_dir):
         """Test that database directory is created if it doesn't exist."""
         mock_store = MagicMock()
@@ -219,7 +219,7 @@ class TestGenerateEmbeddingsWithCurategpt:
             # Assertions
             assert os.path.exists(os.path.dirname(db_path))
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_duckdb_backend_specified(self, mock_get_store, sample_csv, temp_dir):
         """Test that duckdb backend is specified in get_store call."""
         mock_store = MagicMock()
@@ -247,7 +247,7 @@ class TestExportEmbeddingsToCSV:
                 os.path.join(temp_dir, "output.csv")
             )
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_successful_csv_export(self, mock_get_store, temp_dir):
         """Test successful CSV export from database."""
         # Create a fake database directory
@@ -279,6 +279,7 @@ class TestExportEmbeddingsToCSV:
 
         # Assertions
         assert num_exported == 2
+        mock_get_store.assert_called_with("duckdb", db_path)
         assert os.path.exists(output_path)
 
         # Check CSV content
@@ -289,7 +290,7 @@ class TestExportEmbeddingsToCSV:
             assert rows[0]["id"] == "BERVO:0000001"
             assert rows[1]["id"] == "BERVO:0000002"
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_csv_export_creates_directory(self, mock_get_store, temp_dir):
         """Test that export creates output directory if it doesn't exist."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -309,7 +310,7 @@ class TestExportEmbeddingsToCSV:
         # Assertions
         assert os.path.exists(os.path.dirname(output_path))
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_empty_collection_export(self, mock_get_store, temp_dir):
         """Test exporting empty collection."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -318,6 +319,7 @@ class TestExportEmbeddingsToCSV:
         mock_store = MagicMock()
         mock_get_store.return_value = mock_store
         mock_store.field_names.return_value = None  # Indicates empty collection
+        mock_store.find.return_value = []
 
         output_path = os.path.join(temp_dir, "output.csv")
 
@@ -328,7 +330,34 @@ class TestExportEmbeddingsToCSV:
         # Assertions
         assert num_exported == 0
 
-    @patch("curategpt.store.get_store")
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
+    def test_csv_export_infers_field_names_when_store_returns_empty(self, mock_get_store, temp_dir):
+        """Test that export falls back to inferring field names from documents."""
+        db_path = os.path.join(temp_dir, "test.duckdb")
+        os.makedirs(db_path, exist_ok=True)
+
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
+        mock_store.field_names.return_value = []
+        mock_store.find.return_value = [
+            {"id": "BERVO:0000001", "label": "Temperature"},
+            {"id": "BERVO:0000002", "label": "Humidity"},
+        ]
+
+        output_path = os.path.join(temp_dir, "output.csv")
+        num_exported = export_embeddings_to_csv(
+            db_path, "test_collection", output_path)
+
+        assert num_exported == 2
+        assert os.path.exists(output_path)
+        with open(output_path, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 2
+            assert reader.fieldnames is not None
+            assert set(reader.fieldnames) == {"id", "label"}
+
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_large_csv_export(self, mock_get_store, temp_dir):
         """Test exporting large number of documents."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -360,3 +389,36 @@ class TestExportEmbeddingsToCSV:
             reader = csv.DictReader(f)
             rows = list(reader)
             assert len(rows) == 1000
+
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
+    def test_csv_export_handles_duckdb_tuple_results(self, mock_get_store, temp_dir):
+        """Test export when CurateGPT returns tuple-shaped DuckDB search results."""
+        db_path = os.path.join(temp_dir, "test.duckdb")
+        os.makedirs(db_path, exist_ok=True)
+
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
+        mock_store.field_names.return_value = []
+        mock_store.find.return_value = [
+            (
+                {"id": "BERVO:0000001", "label": "Temperature"},
+                0.0,
+                {"_embeddings": [0.1, 0.2], "documents": "doc1"},
+            ),
+            (
+                {"id": "BERVO:0000002", "label": "Humidity"},
+                0.0,
+                {"_embeddings": [0.3, 0.4], "documents": "doc2"},
+            ),
+        ]
+
+        output_path = os.path.join(temp_dir, "output.csv")
+        num_exported = export_embeddings_to_csv(
+            db_path, "test_collection", output_path)
+
+        assert num_exported == 2
+        with open(output_path, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 2
+            assert rows[0]["id"] == "BERVO:0000001"
