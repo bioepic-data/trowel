@@ -11,6 +11,13 @@ __all__ = [
 ]
 
 
+def _get_curategpt_store(store_type: str, db_path: str):
+    """Import CurateGPT lazily and return a configured store instance."""
+    from curategpt.store import get_store
+
+    return get_store(store_type, db_path)
+
+
 def _normalize_store_result(result, include_embeddings: bool = False) -> Optional[dict]:
     """Normalize a CurateGPT search result into a dictionary row for CSV export.
 
@@ -80,7 +87,7 @@ def generate_embeddings_with_curategpt(
         )
 
     try:
-        from curategpt.store import get_store
+        store = _get_curategpt_store("duckdb", db_path)
     except ImportError:
         raise ImportError(
             "curategpt is required for embedding generation. "
@@ -100,7 +107,6 @@ def generate_embeddings_with_curategpt(
     os.makedirs(db_dir, exist_ok=True)
 
     logging.info(f"Initializing CurateGPT store with DuckDB at {db_path}...")
-    store = get_store("duckdb", db_path)
 
     logging.info(f"Loading data from {csv_path}...")
     rows_read = 0
@@ -190,7 +196,7 @@ def export_embeddings_to_csv(
         raise FileNotFoundError(f"Database path not found: {db_path}")
 
     try:
-        from curategpt.store import get_store
+        store = _get_curategpt_store("duckdb", db_path)
     except ImportError:
         raise ImportError(
             "curategpt is required for this operation. "
@@ -198,7 +204,6 @@ def export_embeddings_to_csv(
         )
 
     logging.info(f"Opening CurateGPT database at {db_path}...")
-    store = get_store("duckdb", db_path)
 
     logging.info(
         f"Retrieving all documents from collection '{collection_name}'...")
