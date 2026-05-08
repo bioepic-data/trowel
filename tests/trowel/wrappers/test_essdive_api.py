@@ -7,15 +7,28 @@ from unittest.mock import patch, MagicMock, mock_open
 import requests
 import polars as pl
 
-from trowel.wrappers.essdive import get_metadata, get_variable_names
+from trowel.wrappers.essdive import (
+    get_metadata,
+    get_variable_names,
+    normalize_essdive_token,
+)
 
 
 class TestGetMetadata(unittest.TestCase):
     """Test suite for get_metadata function."""
 
+    def test_normalize_essdive_token(self):
+        """Test ESS-DIVE token normalization for anonymous public access."""
+        self.assertIsNone(normalize_essdive_token(None))
+        self.assertIsNone(normalize_essdive_token(""))
+        self.assertIsNone(normalize_essdive_token("  "))
+        self.assertIsNone(normalize_essdive_token("null"))
+        self.assertIsNone(normalize_essdive_token("None"))
+        self.assertEqual(normalize_essdive_token(" token "), "token")
+
     @patch('requests.get')
-    def test_get_metadata_success(self, mock_get):
-        """Test get_metadata with successful API response."""
+    def test_get_metadata_success_without_token(self, mock_get):
+        """Test get_metadata with successful anonymous API response."""
         # Mock response for successful API call
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -42,8 +55,13 @@ class TestGetMetadata(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             # Call the function
             results_path, frequencies_path, filetable_path = get_metadata(
-                ['doi:10.1234/test'], 'fake_token', temp_dir
+                ['doi:10.1234/test'], None, temp_dir
             )
+
+            request_url = mock_get.call_args[0][0]
+            request_headers = mock_get.call_args[1]["headers"]
+            self.assertIn("doi%3A10.1234%2Ftest", request_url)
+            self.assertNotIn("Authorization", request_headers)
 
             # Check if files were created
             self.assertTrue(os.path.exists(results_path))
@@ -69,6 +87,48 @@ class TestGetMetadata(unittest.TestCase):
                 self.assertIn('temperature', frequencies_content)
                 # pH is normalized to lowercase
                 self.assertIn('ph', frequencies_content)
+
+    @patch('requests.get')
+    def test_get_metadata_includes_real_token(self, mock_get):
+        """Test get_metadata includes Authorization for a real token."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            get_metadata(['10.1234/test'], ' fake_token ', temp_dir)
+
+            request_headers = mock_get.call_args[1]["headers"]
+            self.assertEqual(
+                request_headers["Authorization"],
+                "Bearer fake_token",
+            )
+
+    @patch('requests.get')
+    def test_get_metadata_omits_null_like_token(self, mock_get):
+        """Test get_metadata omits Authorization for null-like token values."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            get_metadata(['10.1234/test'], 'null', temp_dir)
+
+            request_headers = mock_get.call_args[1]["headers"]
+            self.assertNotIn("Authorization", request_headers)
+
+    @patch('requests.get')
+    def test_get_metadata_accepts_essdive_identifier(self, mock_get):
+        """Test get_metadata can request an ESS-DIVE package identifier."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            get_metadata(['ess-dive-test-id'], None, temp_dir)
+
+            request_url = mock_get.call_args[0][0]
+            self.assertTrue(request_url.endswith("/packages/ess-dive-test-id"))
 
     @patch('requests.get')
     def test_get_metadata_error(self, mock_get):
