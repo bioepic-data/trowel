@@ -340,6 +340,7 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
                     db_path,
                     collection,
                     export_csv,
+                    include_embeddings=True,
                 )
                 logging.info(f"Exported {num_exported} embeddings to {export_csv}")
                 logging.info("You can now use these embeddings with other embedding commands:")

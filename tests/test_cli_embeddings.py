@@ -132,7 +132,12 @@ class TestGenerateEmbeddingsCommand:
             assert result.exit_code == 0
             assert "Exporting embeddings to" in result.output
             assert "Exported 3 embeddings" in result.output
-            assert mock_export.called
+            mock_export.assert_called_once_with(
+                db_path,
+                "embeddings",
+                export_path,
+                include_embeddings=True,
+            )
 
     @patch("trowel.cli.generate_embeddings_with_curategpt")
     def test_command_with_limit(self, mock_generate, runner, sample_csv, temp_dir):
