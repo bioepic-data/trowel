@@ -269,17 +269,18 @@ def prepare_embeddings(input_file, output_file, columns, skip_rows):
 @click.option('-l', '--limit', type=int, default=None, help='Maximum number of rows to embed (for testing/sampling).')
 @click.option('-s', '--skip', type=int, default=0, help='Number of rows to skip from the beginning.')
 @click.option('-e', '--export', 'export_csv', help='Optional: export embeddings to CSV file after generation.', required=False)
-def generate_embeddings(input_file, collection, db_path, text_fields, limit, skip, export_csv):
-    """Generate embeddings for CSV data using CurateGPT with OpenAI API.
+@click.option('-m', '--model', help='CurateGPT embedding model. Use "openai:<model-name>" for OpenAI models.', required=False)
+def generate_embeddings(input_file, collection, db_path, text_fields, limit, skip, export_csv, model):
+    """Generate embeddings for CSV data using CurateGPT.
 
     This command:
     1. Reads a prepared CSV file
-    2. Generates vector embeddings using OpenAI's text-embedding-ada-002 model
+    2. Generates vector embeddings using CurateGPT
     3. Stores embeddings in a DuckDB database
     4. Optionally exports results to CSV for downstream analysis
 
     REQUIREMENTS:
-    - OPENAI_API_KEY environment variable must be set
+    - OPENAI_API_KEY environment variable must be set for OpenAI models
     - Install CurateGPT: pip install curategpt
     - Install DuckDB: pip install duckdb
 
@@ -296,6 +297,9 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
         # Specify which columns to use for embeddings
         trowel embeddings generate-embeddings -i bervo_prepared.csv -f "id,label,definition"
 
+        # Specify a CurateGPT embedding model
+        trowel embeddings generate-embeddings -i bervo_prepared.csv -m openai:text-embedding-3-small
+
         # Export to CSV for use with other commands
         trowel embeddings generate-embeddings -i bervo_prepared.csv -e backup/bervo_embeds.csv
     """
@@ -303,11 +307,10 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
         logging.error(f"Input file {input_file} does not exist.")
         sys.exit(1)
 
-    # Check for OpenAI API key
-    if not os.getenv("OPENAI_API_KEY"):
+    if model and model.startswith("openai:") and not os.getenv("OPENAI_API_KEY"):
         logging.error(
             "OPENAI_API_KEY environment variable is not set. "
-            "CurateGPT requires an OpenAI API key for embedding generation. "
+            "CurateGPT requires an OpenAI API key for OpenAI embeddings. "
             "Set it with: export OPENAI_API_KEY='your-key-here'"
         )
         sys.exit(1)
@@ -327,6 +330,7 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
             text_fields=text_fields_list,
             limit=limit,
             skip=skip,
+            model=model,
         )
 
         logging.info(f"Successfully generated {num_embeddings} embeddings")
