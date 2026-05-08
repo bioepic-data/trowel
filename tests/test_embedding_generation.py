@@ -71,13 +71,14 @@ class TestGenerateEmbeddingsWithCurategpt:
                 db_path=os.path.join(temp_dir, "test.duckdb")
             )
 
-    def test_missing_openai_api_key(self, sample_csv, temp_dir):
-        """Test that function raises error when OPENAI_API_KEY is not set."""
+    def test_missing_openai_api_key_for_openai_model(self, sample_csv, temp_dir):
+        """Test that OpenAI models require OPENAI_API_KEY."""
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ImportError, match="OPENAI_API_KEY"):
                 generate_embeddings_with_curategpt(
                     sample_csv,
-                    db_path=os.path.join(temp_dir, "test.duckdb")
+                    db_path=os.path.join(temp_dir, "test.duckdb"),
+                    model="openai:text-embedding-3-small",
                 )
 
     def test_missing_curategpt(self, sample_csv, temp_dir):
@@ -199,6 +200,46 @@ class TestGenerateEmbeddingsWithCurategpt:
             # Assertions
             assert num_embeddings == 3
             assert mock_store.insert.call_count == 3
+
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
+    def test_embedding_with_model(self, mock_get_store, sample_csv, temp_dir):
+        """Test that model parameter is passed to CurateGPT insert."""
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
+
+        with patch.dict(os.environ, {}, clear=True):
+            db_path = os.path.join(temp_dir, "test.duckdb")
+
+            result_path, num_embeddings = generate_embeddings_with_curategpt(
+                sample_csv,
+                db_path=db_path,
+                model="all-MiniLM-L6-v2",
+            )
+
+            assert result_path == db_path
+            assert num_embeddings == 3
+            first_insert_kwargs = mock_store.insert.call_args_list[0][1]
+            assert first_insert_kwargs["model"] == "all-MiniLM-L6-v2"
+
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
+    def test_embedding_without_model_uses_curategpt_default(
+        self,
+        mock_get_store,
+        sample_csv,
+        temp_dir,
+    ):
+        """Test that model is omitted when caller uses the CurateGPT default."""
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
+
+        with patch.dict(os.environ, {}, clear=True):
+            generate_embeddings_with_curategpt(
+                sample_csv,
+                db_path=os.path.join(temp_dir, "test.duckdb"),
+            )
+
+            first_insert_kwargs = mock_store.insert.call_args_list[0][1]
+            assert "model" not in first_insert_kwargs
 
     @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
     def test_database_directory_creation(self, mock_get_store, sample_csv, temp_dir):

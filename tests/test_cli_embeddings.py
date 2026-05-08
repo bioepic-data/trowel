@@ -63,14 +63,20 @@ class TestGenerateEmbeddingsCommand:
         assert result.exit_code != 0
         assert "does not exist" in result.output
 
-    def test_command_requires_openai_api_key(self, runner, sample_csv, temp_dir):
-        """Test that command fails without OPENAI_API_KEY."""
+    def test_command_requires_openai_api_key_for_openai_model(
+        self,
+        runner,
+        sample_csv,
+        temp_dir,
+    ):
+        """Test that command fails without OPENAI_API_KEY for OpenAI models."""
         # Clear environment
         with patch.dict(os.environ, {}, clear=True):
             result = runner.invoke(main, [
                 "embeddings", "generate-embeddings",
                 "-i", sample_csv,
-                "-d", os.path.join(temp_dir, "test.duckdb")
+                "-d", os.path.join(temp_dir, "test.duckdb"),
+                "-m", "openai:text-embedding-3-small",
             ])
             assert result.exit_code != 0
             assert "OPENAI_API_KEY" in result.output
@@ -195,6 +201,50 @@ class TestGenerateEmbeddingsCommand:
             mock_generate.assert_called_once()
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["text_fields"] == ["label", "definition"]
+
+    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    def test_command_with_model(self, mock_generate, runner, sample_csv, temp_dir):
+        """Test command with CurateGPT model parameter."""
+        db_path = os.path.join(temp_dir, "test.duckdb")
+        mock_generate.return_value = (db_path, 3)
+
+        with patch.dict(os.environ, {}, clear=True):
+            result = runner.invoke(main, [
+                "embeddings", "generate-embeddings",
+                "-i", sample_csv,
+                "-d", db_path,
+                "-m", "all-MiniLM-L6-v2",
+            ])
+
+            assert result.exit_code == 0
+            mock_generate.assert_called_once()
+            call_kwargs = mock_generate.call_args[1]
+            assert call_kwargs["model"] == "all-MiniLM-L6-v2"
+
+    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    def test_command_with_openai_model_and_api_key(
+        self,
+        mock_generate,
+        runner,
+        sample_csv,
+        temp_dir,
+    ):
+        """Test command forwards OpenAI model when OPENAI_API_KEY is set."""
+        db_path = os.path.join(temp_dir, "test.duckdb")
+        mock_generate.return_value = (db_path, 3)
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+            result = runner.invoke(main, [
+                "embeddings", "generate-embeddings",
+                "-i", sample_csv,
+                "-d", db_path,
+                "-m", "openai:text-embedding-3-small",
+            ])
+
+            assert result.exit_code == 0
+            mock_generate.assert_called_once()
+            call_kwargs = mock_generate.call_args[1]
+            assert call_kwargs["model"] == "openai:text-embedding-3-small"
 
     @patch("trowel.cli.export_embeddings_to_csv")
     @patch("trowel.cli.generate_embeddings_with_curategpt")

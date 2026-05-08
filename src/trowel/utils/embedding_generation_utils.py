@@ -53,11 +53,12 @@ def generate_embeddings_with_curategpt(
     text_fields: Optional[List[str]] = None,
     limit: Optional[int] = None,
     skip: int = 0,
+    model: Optional[str] = None,
 ) -> Tuple[str, int]:
     """Generate embeddings for CSV data using CurateGPT with DuckDB backend.
 
     Initializes a CurateGPT store with DuckDB backend and generates
-    vector embeddings for each row using OpenAI's text-embedding-ada-002 model.
+    vector embeddings for each row using CurateGPT's configured model.
 
     Args:
         csv_path: Path to the CSV file containing data to embed
@@ -67,22 +68,24 @@ def generate_embeddings_with_curategpt(
                     If None, uses all columns concatenated.
         limit: Maximum number of rows to embed (for testing/sampling)
         skip: Number of rows to skip from the beginning
+        model: CurateGPT embedding model string. For OpenAI models, use
+               CurateGPT's "openai:<model-name>" syntax.
 
     Returns:
         Tuple of (database_path, number_of_embeddings_created)
 
     Raises:
         FileNotFoundError: If the CSV file does not exist
-        ImportError: If curategpt or duckdb is not installed or OPENAI_API_KEY is not set
+        ImportError: If curategpt or duckdb is not installed or an OpenAI
+                     model is requested without OPENAI_API_KEY
     """
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
-    # Check for OpenAI API key
-    if not os.getenv("OPENAI_API_KEY"):
+    if model and model.startswith("openai:") and not os.getenv("OPENAI_API_KEY"):
         raise ImportError(
             "OPENAI_API_KEY environment variable is not set. "
-            "CurateGPT requires an OpenAI API key for embedding generation. "
+            "CurateGPT requires an OpenAI API key for OpenAI embeddings. "
             "Set it with: export OPENAI_API_KEY='your-key-here'"
         )
 
@@ -107,6 +110,8 @@ def generate_embeddings_with_curategpt(
     os.makedirs(db_dir, exist_ok=True)
 
     logging.info(f"Initializing CurateGPT store with DuckDB at {db_path}...")
+    if model:
+        logging.info(f"Using CurateGPT embedding model: {model}")
 
     logging.info(f"Loading data from {csv_path}...")
     rows_read = 0
@@ -145,7 +150,10 @@ def generate_embeddings_with_curategpt(
                 try:
                     # Insert the row with its text content
                     # CurateGPT will automatically generate embeddings
-                    store.insert([row], collection=collection_name)
+                    insert_kwargs = {"collection": collection_name}
+                    if model:
+                        insert_kwargs["model"] = model
+                    store.insert([row], **insert_kwargs)
                     rows_inserted += 1
 
                     if rows_inserted % 100 == 0:
