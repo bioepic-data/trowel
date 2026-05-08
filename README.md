@@ -174,14 +174,14 @@ trowel embeddings prepare-embeddings \
 
 #### generate-embeddings
 
-Generate vector embeddings for CSV data using CurateGPT and OpenAI's embedding API.
+Generate vector embeddings for CSV data using CurateGPT.
 
-This command handles the complete embedding pipeline: reading your prepared data, calling OpenAI's `text-embedding-ada-002` model for each row, storing embeddings in a DuckDB database, and optionally exporting results to CSV for downstream analysis.
+This command handles the complete embedding pipeline: reading your prepared data, calling CurateGPT's embedding model for each row, storing embeddings in a DuckDB database, and optionally exporting results to CSV for downstream analysis.
 
 **Requirements:**
-- `OPENAI_API_KEY` environment variable must be set
 - CurateGPT installed: `pip install curategpt`
 - DuckDB installed: `pip install duckdb`
+- `OPENAI_API_KEY` environment variable must be set only when using an OpenAI model
 
 ```bash
 # Basic usage - embed a prepared file
@@ -203,6 +203,11 @@ trowel embeddings generate-embeddings \
   -i bervo_prepared.csv \
   -f "id,label,definition"
 
+# Specify a CurateGPT embedding model
+trowel embeddings generate-embeddings \
+  -i bervo_prepared.csv \
+  -m openai:text-embedding-3-small
+
 # Generate and export embeddings for use with other commands
 trowel embeddings generate-embeddings \
   -i bervo_prepared.csv \
@@ -217,13 +222,14 @@ trowel embeddings generate-embeddings \
 - `-l, --limit INTEGER` - Maximum rows to embed (useful for testing large files)
 - `-s, --skip INTEGER` - Number of rows to skip from beginning
 - `-e, --export TEXT` - Optional: export embeddings to CSV file after generation
+- `-m, --model TEXT` - CurateGPT embedding model. Use CurateGPT's `openai:<model-name>` syntax for OpenAI models
 
 **Output:**
 - DuckDB database stored at `--db-path` location (default: `./backup/db.duckdb`)
 - If `--export` specified: CSV file with embeddings for use with other commands
 
 **Note on Costs:**
-Each embedding call uses OpenAI's API and incurs a small cost. The `text-embedding-ada-002` model is one of the most affordable OpenAI models. For BERVO (5000+ terms), expect costs of a few dollars.
+OpenAI embedding models incur API costs. CurateGPT's default Hugging Face/SentenceTransformer model does not use OpenAI billing.
 
 #### load-embeddings
 
