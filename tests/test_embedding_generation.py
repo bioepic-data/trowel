@@ -422,3 +422,49 @@ class TestExportEmbeddingsToCSV:
             rows = list(reader)
             assert len(rows) == 2
             assert rows[0]["id"] == "BERVO:0000001"
+
+    @patch("trowel.utils.embedding_generation_utils._get_curategpt_store")
+    def test_csv_export_requests_duckdb_embeddings_when_included(
+        self,
+        mock_get_store,
+        temp_dir,
+    ):
+        """Test export requests embeddings when requested."""
+        db_path = os.path.join(temp_dir, "test.duckdb")
+        os.makedirs(db_path, exist_ok=True)
+
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
+        mock_store.field_names.return_value = []
+
+        def fake_find(where, collection, include=None):
+            embeddings = (
+                [0.1, 0.2]
+                if include and "embeddings" in include
+                else None
+            )
+            return [
+                (
+                    {"id": "BERVO:0000001", "label": "Temperature"},
+                    0.0,
+                    {"_embeddings": embeddings, "documents": "Temperature"},
+                )
+            ]
+
+        mock_store.find.side_effect = fake_find
+
+        output_path = os.path.join(temp_dir, "output.csv")
+        num_exported = export_embeddings_to_csv(
+            db_path,
+            "test_collection",
+            output_path,
+            include_embeddings=True,
+        )
+
+        assert num_exported == 1
+        with open(output_path, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 1
+            assert "embeddings" in reader.fieldnames
+            assert rows[0]["embeddings"] == "[0.1, 0.2]"

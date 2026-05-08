@@ -212,7 +212,11 @@ def export_embeddings_to_csv(
         # Get field names for the collection. Some CurateGPT backends can return
         # empty field_names even when rows exist, so fall back to inferring them.
         field_names = store.field_names(collection=collection_name) or []
-        raw_results = list(store.find(where={}, collection=collection_name))
+        find_kwargs = {"where": {}, "collection": collection_name}
+        if include_embeddings:
+            find_kwargs["include"] = ["metadatas", "documents", "embeddings"]
+
+        raw_results = list(store.find(**find_kwargs))
         docs = []
         for result in raw_results:
             normalized = _normalize_store_result(
