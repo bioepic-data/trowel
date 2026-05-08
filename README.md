@@ -82,7 +82,8 @@ This command downloads the official BERVO ontology from Google Sheets and is use
 
 Commands for working with [ESS-DIVE](https://ess-dive.lbl.gov/) environmental science datasets.
 
-**Requires:** `ESSDIVE_TOKEN` environment variable ([get access](https://docs.ess-dive.lbl.gov/programmatic-tools/ess-dive-dataset-api#get-access))
+Public ESS-DIVE metadata can be retrieved without a token. Set `ESSDIVE_TOKEN`
+only when you need authenticated access to non-public datasets.
 
 #### get-essdive-metadata
 
@@ -551,7 +552,7 @@ This downloads the latest BERVO from Google Sheets, making it easy to keep your 
 ### Environment Variables
 
 ```bash
-# Required for ESS-DIVE commands
+# Optional for ESS-DIVE commands that need authenticated access
 export ESSDIVE_TOKEN=your_token_here
 
 # Required for embedding generation (CurateGPT)
@@ -559,6 +560,9 @@ export OPENAI_API_KEY=your_api_key_here
 ```
 
 ### Getting ESS-DIVE Access
+
+Public ESS-DIVE metadata requests do not require authentication. For access to
+non-public datasets:
 
 1. Visit https://docs.ess-dive.lbl.gov/programmatic-tools/ess-dive-dataset-api#get-access
 2. Follow the authentication instructions
@@ -595,7 +599,11 @@ pip install matplotlib seaborn scikit-learn scipy duckdb
 
 ## Troubleshooting
 
-### "ESSDIVE_TOKEN is not set"
+### Authenticated ESS-DIVE Access
+
+Public ESS-DIVE metadata commands can run without `ESSDIVE_TOKEN`. Set a token
+only when accessing datasets that require authentication:
+
 ```bash
 export ESSDIVE_TOKEN=your_token_here
 ```
