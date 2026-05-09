@@ -3,7 +3,6 @@
 # See https://api.ess-dive.lbl.gov/#/Dataset/getDataset
 
 from io import StringIO
-import sys
 import string
 import os
 import tempfile
@@ -12,6 +11,7 @@ from typing import Tuple, List, Optional
 import csv
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import quote
 import polars as pl
 import requests
 import xml.etree.ElementTree as ET
@@ -47,6 +47,31 @@ PARSIBLE_EXTENSIONS = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_essdive_token(token: Optional[str]) -> Optional[str]:
+    """Return a usable ESS-DIVE token, or None for anonymous public access."""
+    if token is None:
+        return None
+
+    normalized = token.strip()
+    if not normalized or normalized.lower() in {"null", "none"}:
+        return None
+    return normalized
+
+
+def _essdive_headers(token: Optional[str]) -> dict:
+    """Build ESS-DIVE request headers, omitting auth when no token exists."""
+    normalized_token = normalize_essdive_token(token)
+    if not normalized_token:
+        return {}
+    return {"Authorization": f"Bearer {normalized_token}"}
+
+
+def _package_url(identifier: str) -> str:
+    """Build the current ESS-DIVE package endpoint URL for an identifier."""
+    encoded_identifier = quote(identifier, safe="")
+    return f"{BASE_URL}/{ENDPOINT}/{encoded_identifier}"
 
 
 def sanitize_tsv_field(value) -> str:
@@ -196,17 +221,18 @@ def append_dd_content_to_file(content: str, dataset_id: str, source_filename: st
 
 
 def get_metadata(
-    identifiers: list, token: str, outpath: str = "."
+    identifiers: list, token: Optional[str] = None, outpath: str = "."
 ) -> Tuple[str, str, str]:
     """Get metadata from ESS-DIVE for a list of identifiers.
-    The identifiers should be DOIs.
-    This also requires an authentication token for ESS-DIVE.
+    The identifiers should be DOIs or ESS-DIVE package identifiers.
+    Public metadata can be retrieved anonymously; provide an ESS-DIVE token for
+    authenticated requests.
 
     Results are streamed to files in the specified output directory as they are received.
 
     Args:
         identifiers: List of DOI identifiers
-        token: ESS-DIVE authentication token
+        token: Optional ESS-DIVE authentication token
         outpath: Directory to write output files (defaults to current directory)
 
     Returns:
@@ -241,7 +267,7 @@ def get_metadata(
     files_schema.write_csv(filetable_path, separator="\t")
 
     all_variables = {}  # key is variable name, value is frequency
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = _essdive_headers(token)
 
     results_found = False
     files_found = False
@@ -269,17 +295,12 @@ def get_metadata(
         # clean it up
         identifier = identifier.strip()
 
-        # Check if this is a DOI anyway
-        if identifier.startswith("ess-dive"):
-            sys.exit(
-                f"The provided identifier {identifier} does not appear to be a DOI. Please check the format."
-            )
-        if not identifier.startswith("doi:"):
+        # Keep DOI inputs backward-compatible, but the current API also accepts
+        # ESS-DIVE package identifiers at /packages/{identifier}.
+        if not identifier.startswith("doi:") and not identifier.startswith("ess-dive"):
             identifier = "doi:" + identifier
 
-        get_packages_url = "{}/{}/{}?&isPublic=true".format(
-            BASE_URL, ENDPOINT, identifier
-        )
+        get_packages_url = _package_url(identifier)
         response = requests.get(
             get_packages_url, headers=headers, verify=True, stream=True)
 

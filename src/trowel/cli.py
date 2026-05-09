@@ -46,11 +46,6 @@ outpath_option = click.option(
 
 # Get token from environment
 ESSDIVE_TOKEN = os.getenv("ESSDIVE_TOKEN")
-if not ESSDIVE_TOKEN:
-    logging.error(
-        "You must set the ESS-DIVE authentication token as the ESSDIVE_TOKEN environment variable."
-        "\nSee https://docs.ess-dive.lbl.gov/programmatic-tools/ess-dive-dataset-api#get-access"
-    )
 
 
 @click.group()
@@ -128,10 +123,6 @@ def get_essdive_metadata(path, outpath):
 
     with open(path, "r") as f:
         identifiers = f.readlines()
-
-    if not ESSDIVE_TOKEN:
-        logging.error("ESSDIVE_TOKEN is not set. Cannot proceed.")
-        sys.exit(1)
 
     results_path, frequencies_path, filetable_path = get_metadata(
         identifiers, ESSDIVE_TOKEN, outpath)
