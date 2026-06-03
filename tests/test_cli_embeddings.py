@@ -3,13 +3,12 @@
 import csv
 import os
 import tempfile
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
-from trowel.cli import main, generate_embeddings
+from trowel.cli import main
 
 
 @pytest.fixture
@@ -81,7 +80,7 @@ class TestGenerateEmbeddingsCommand:
             assert result.exit_code != 0
             assert "OPENAI_API_KEY" in result.output
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_successful_execution(self, mock_generate, runner, sample_csv, temp_dir):
         """Test successful command execution."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -99,7 +98,7 @@ class TestGenerateEmbeddingsCommand:
             assert "Successfully generated 3 embeddings" in result.output
             assert "Database saved at" in result.output
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_with_custom_collection_name(self, mock_generate, runner, sample_csv, temp_dir):
         """Test command with custom collection name."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -114,12 +113,13 @@ class TestGenerateEmbeddingsCommand:
             ])
 
             # Verify the collection name was passed
+            assert result.exit_code == 0
             mock_generate.assert_called_once()
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["collection_name"] == "my_collection"
 
     @patch("trowel.cli.export_embeddings_to_csv")
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_with_export(self, mock_generate, mock_export, runner, sample_csv, temp_dir):
         """Test command with CSV export."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -145,7 +145,7 @@ class TestGenerateEmbeddingsCommand:
                 include_embeddings=True,
             )
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_with_limit(self, mock_generate, runner, sample_csv, temp_dir):
         """Test command with limit parameter."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -160,11 +160,12 @@ class TestGenerateEmbeddingsCommand:
             ])
 
             # Verify limit was passed
+            assert result.exit_code == 0
             mock_generate.assert_called_once()
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["limit"] == 10
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_with_skip(self, mock_generate, runner, sample_csv, temp_dir):
         """Test command with skip parameter."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -179,11 +180,12 @@ class TestGenerateEmbeddingsCommand:
             ])
 
             # Verify skip was passed
+            assert result.exit_code == 0
             mock_generate.assert_called_once()
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["skip"] == 5
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_with_text_fields(self, mock_generate, runner, sample_csv, temp_dir):
         """Test command with text_fields parameter."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -198,13 +200,14 @@ class TestGenerateEmbeddingsCommand:
             ])
 
             # Verify text_fields were parsed correctly
+            assert result.exit_code == 0
             mock_generate.assert_called_once()
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["text_fields"] == ["label", "definition"]
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_with_model(self, mock_generate, runner, sample_csv, temp_dir):
-        """Test command with CurateGPT model parameter."""
+        """Test command with LinkML-Store model parameter."""
         db_path = os.path.join(temp_dir, "test.duckdb")
         mock_generate.return_value = (db_path, 3)
 
@@ -221,7 +224,7 @@ class TestGenerateEmbeddingsCommand:
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["model"] == "all-MiniLM-L6-v2"
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_with_openai_model_and_api_key(
         self,
         mock_generate,
@@ -247,7 +250,7 @@ class TestGenerateEmbeddingsCommand:
             assert call_kwargs["model"] == "openai:text-embedding-3-small"
 
     @patch("trowel.cli.export_embeddings_to_csv")
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_export_failure_handling(self, mock_generate, mock_export, runner, sample_csv, temp_dir):
         """Test that export failure is handled gracefully."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -267,11 +270,11 @@ class TestGenerateEmbeddingsCommand:
             assert "Failed to export embeddings" in result.output
             assert "Database was created successfully" in result.output
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_import_error_handling(self, mock_generate, runner, sample_csv, temp_dir):
         """Test that ImportError from missing dependencies is handled."""
         db_path = os.path.join(temp_dir, "test.duckdb")
-        mock_generate.side_effect = ImportError("curategpt is required")
+        mock_generate.side_effect = ImportError("linkml-store is required")
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
             result = runner.invoke(main, [
@@ -281,9 +284,9 @@ class TestGenerateEmbeddingsCommand:
             ])
 
             assert result.exit_code != 0
-            assert "curategpt is required" in result.output
+            assert "linkml-store is required" in result.output
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_general_error_handling(self, mock_generate, runner, sample_csv, temp_dir):
         """Test that general exceptions are handled."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -309,7 +312,7 @@ class TestGenerateEmbeddingsCommand:
         assert "OPENAI_API_KEY" in result.output
         assert "DuckDB" in result.output
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_command_logs_next_steps(self, mock_generate, runner, sample_csv, temp_dir):
         """Test that command logs helpful next steps after export."""
         db_path = os.path.join(temp_dir, "test.duckdb")
@@ -328,7 +331,7 @@ class TestGenerateEmbeddingsCommand:
                 assert "find-similar" in result.output
                 assert "visualize-clusters" in result.output
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_default_db_path_used(self, mock_generate, runner, sample_csv, temp_dir):
         """Test that default database path is used when not specified."""
         mock_generate.return_value = ("./backup/db.duckdb", 3)
@@ -340,11 +343,12 @@ class TestGenerateEmbeddingsCommand:
             ])
 
             # Verify default db_path was used
+            assert result.exit_code == 0
             mock_generate.assert_called_once()
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["db_path"] == "./backup/db.duckdb"
 
-    @patch("trowel.cli.generate_embeddings_with_curategpt")
+    @patch("trowel.cli.generate_embeddings_with_linkml_store")
     def test_default_collection_name_used(self, mock_generate, runner, sample_csv, temp_dir):
         """Test that default collection name is used when not specified."""
         mock_generate.return_value = ("./backup/db.duckdb", 3)
@@ -356,6 +360,7 @@ class TestGenerateEmbeddingsCommand:
             ])
 
             # Verify default collection_name was used
+            assert result.exit_code == 0
             mock_generate.assert_called_once()
             call_kwargs = mock_generate.call_args[1]
             assert call_kwargs["collection_name"] == "embeddings"

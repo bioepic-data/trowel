@@ -11,7 +11,6 @@ from trowel.utils.matching_utils import match_terms
 from trowel.utils.embedding_utils import (
     prepare_embedding_csv,
     load_embeddings_from_csv,
-    load_embeddings_from_duckdb,
     get_top_level_categories,
 )
 from trowel.utils.similarity_utils import (
@@ -26,7 +25,7 @@ from trowel.utils.visualization_utils import (
     create_category_color_map,
 )
 from trowel.utils.embedding_generation_utils import (
-    generate_embeddings_with_curategpt,
+    generate_embeddings_with_linkml_store,
     export_embeddings_to_csv,
 )
 
@@ -260,19 +259,19 @@ def prepare_embeddings(input_file, output_file, columns, skip_rows):
 @click.option('-l', '--limit', type=int, default=None, help='Maximum number of rows to embed (for testing/sampling).')
 @click.option('-s', '--skip', type=int, default=0, help='Number of rows to skip from the beginning.')
 @click.option('-e', '--export', 'export_csv', help='Optional: export embeddings to CSV file after generation.', required=False)
-@click.option('-m', '--model', help='CurateGPT embedding model. Use "openai:<model-name>" for OpenAI models.', required=False)
+@click.option('-m', '--model', help='Embedding model name for LinkML-Store/llm. Legacy "openai:<model-name>" values are accepted.', required=False)
 def generate_embeddings(input_file, collection, db_path, text_fields, limit, skip, export_csv, model):
-    """Generate embeddings for CSV data using CurateGPT.
+    """Generate embeddings for CSV data using LinkML-Store.
 
     This command:
     1. Reads a prepared CSV file
-    2. Generates vector embeddings using CurateGPT
-    3. Stores embeddings in a DuckDB database
+    2. Generates vector embeddings using LinkML-Store
+    3. Stores data and embeddings in a DuckDB database
     4. Optionally exports results to CSV for downstream analysis
 
     REQUIREMENTS:
-    - OPENAI_API_KEY environment variable must be set for OpenAI models
-    - Install CurateGPT: pip install curategpt
+    - OPENAI_API_KEY environment variable must be set for OpenAI embedding models
+    - Install LinkML-Store: pip install linkml-store
     - Install DuckDB: pip install duckdb
 
     Example:
@@ -288,8 +287,8 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
         # Specify which columns to use for embeddings
         trowel embeddings generate-embeddings -i bervo_prepared.csv -f "id,label,definition"
 
-        # Specify a CurateGPT embedding model
-        trowel embeddings generate-embeddings -i bervo_prepared.csv -m openai:text-embedding-3-small
+        # Specify an embedding model
+        trowel embeddings generate-embeddings -i bervo_prepared.csv -m text-embedding-3-small
 
         # Export to CSV for use with other commands
         trowel embeddings generate-embeddings -i bervo_prepared.csv -e backup/bervo_embeds.csv
@@ -298,10 +297,14 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
         logging.error(f"Input file {input_file} does not exist.")
         sys.exit(1)
 
-    if model and model.startswith("openai:") and not os.getenv("OPENAI_API_KEY"):
+    normalized_model = model.split(":", 1)[1] if model and model.startswith("openai:") else model
+    if (
+        (normalized_model is None or normalized_model.startswith("text-embedding-"))
+        and not os.getenv("OPENAI_API_KEY")
+    ):
         logging.error(
             "OPENAI_API_KEY environment variable is not set. "
-            "CurateGPT requires an OpenAI API key for OpenAI embeddings. "
+            "LinkML-Store requires an OpenAI API key for OpenAI embeddings. "
             "Set it with: export OPENAI_API_KEY='your-key-here'"
         )
         sys.exit(1)
@@ -314,7 +317,7 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
 
     try:
         logging.info("Starting embedding generation...")
-        db_path, num_embeddings = generate_embeddings_with_curategpt(
+        db_path, num_embeddings = generate_embeddings_with_linkml_store(
             input_file,
             collection_name=collection,
             db_path=db_path,
@@ -355,10 +358,10 @@ def generate_embeddings(input_file, collection, db_path, text_fields, limit, ski
 
 
 @embeddings.command()
-@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file.', required=True)
 @click.option('-o', '--output', 'output_dir', help='Directory for output files.', required=False, default='.')
 def load_embeddings(embedding_file, output_dir):
-    """Load embeddings from a CurateGPT-generated CSV file and compute similarity metrics.
+    """Load embeddings from a generated CSV file and compute similarity metrics.
 
     This command:
     1. Loads embeddings and labels
@@ -406,7 +409,7 @@ def load_embeddings(embedding_file, output_dir):
 
 
 @embeddings.command()
-@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT (or just filename to search in backup/).', required=True)
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file (or just filename to search in backup/).', required=True)
 @click.option('-q', '--query', help='Query term to find similar terms for.', required=True)
 @click.option('-n', '--top-n', type=int, default=10, help='Number of similar terms to return.')
 @click.option('-l', '--limit', type=int, default=None, help='Maximum number of terms to load (for large files).')
@@ -552,7 +555,7 @@ def visualize_clusters(embedding_file, method, limit, skip, output_file, label_i
 
 @embeddings.command()
 @click.option('-s', '--source-csv', help='Path to source CSV with term definitions.', required=True)
-@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file.', required=True)
 @click.option('-o', '--output', 'output_file', help='Output file path for the plot.', required=False)
 @click.option('--label-interval', type=int, default=100, help='Interval for labeling points.')
 def visualize_by_category(source_csv, embedding_file, output_file, label_interval):
@@ -592,7 +595,7 @@ def visualize_by_category(source_csv, embedding_file, output_file, label_interva
 
 
 @embeddings.command()
-@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file from CurateGPT.', required=True)
+@click.option('-e', '--embeddings', 'embedding_file', help='Path to embedding CSV file.', required=True)
 @click.option('-n', '--num-terms', type=int, default=50, help='Number of terms to include in heatmap.')
 @click.option('-o', '--output', 'output_file', help='Output file path for the heatmap.', required=False)
 def visualize_heatmap(embedding_file, num_terms, output_file):
