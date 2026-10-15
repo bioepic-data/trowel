@@ -11,6 +11,7 @@ from trowel.wrappers.essdive import (
     get_metadata,
     get_variable_names,
     normalize_essdive_token,
+    _read_first_line_bytes,
 )
 
 
@@ -181,7 +182,8 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
         # Mock response for CSV file
         csv_response = MagicMock()
         csv_response.status_code = 200
-        csv_response.content = b"Temperature,pH,Conductivity\n25.3,7.2,150"
+        csv_response.iter_content.return_value = iter(
+            [b"Temperature,pH,Con", b"ductivity\n25.3,7.2,150"])
 
         # Mock response for XML file
         xml_response = MagicMock()
@@ -245,6 +247,22 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
             # Check that we have proper source tags
             self.assertIn('column', sources)
             self.assertIn('keyword', sources)
+
+            # Never request partial content; the server honors Range and
+            # would truncate data dictionaries, XML, and Excel files.
+            for call in mock_get.call_args_list:
+                self.assertNotIn("Range", call.kwargs.get("headers", {}))
+
+    def test_read_first_line_bytes(self, mock_get):
+        """Header reader skips blank lines and stops after the first line."""
+        response = MagicMock()
+        response.iter_content.return_value = iter(
+            [b"\n  \nA,B", b",C\n1,2,3\n", b"4,5,6\n"])
+        self.assertEqual(_read_first_line_bytes(response), b"\n  \nA,B,C\n")
+
+        # No newline at all: return everything read
+        response.iter_content.return_value = iter([b"A,B,C"])
+        self.assertEqual(_read_first_line_bytes(response), b"A,B,C")
 
     def test_get_variable_names_error(self, mock_get):
         """Test get_column_names with API error."""
