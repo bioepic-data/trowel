@@ -310,8 +310,13 @@ def get_metadata(
             identifier = "doi:" + identifier
 
         get_packages_url = _package_url(identifier)
-        response = requests.get(
-            get_packages_url, headers=headers, verify=True, timeout=API_TIMEOUT)
+        try:
+            response = requests.get(
+                get_packages_url, headers=headers, verify=True, timeout=API_TIMEOUT)
+        except requests.RequestException as e:
+            # Timeouts and connection failures affect one identifier only
+            errors["other_errors"].append(f"{identifier} ({type(e).__name__})")
+            continue
 
         if response.status_code == 200:
             # Success - but will need to restructure

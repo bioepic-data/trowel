@@ -132,6 +132,25 @@ class TestGetMetadata(unittest.TestCase):
             self.assertTrue(request_url.endswith("/packages/ess-dive-test-id"))
 
     @patch('requests.get')
+    def test_get_metadata_continues_after_timeout(self, mock_get):
+        """A timeout on one identifier does not stop the others."""
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json.return_value = {
+            'id': 'ess-dive-ok',
+            'dataset': {'name': 'OK Dataset'},
+        }
+        mock_get.side_effect = [requests.exceptions.ReadTimeout(), ok_response]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_path, _, _ = get_metadata(
+                ['doi:10.1234/slow', 'doi:10.1234/ok'], None, temp_dir
+            )
+            results_df = pl.read_csv(results_path, separator="\t")
+            self.assertEqual(results_df['id'].to_list(), ['ess-dive-ok'])
+            self.assertEqual(mock_get.call_count, 2)
+
+    @patch('requests.get')
     def test_get_metadata_error(self, mock_get):
         """Test get_metadata with API error."""
         # Mock response for failed API call
