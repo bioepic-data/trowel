@@ -18,8 +18,8 @@ TROWEL is a command-line toolkit for working with ecological science data and on
 ## Installation
 
 ### Requirements
-- Python 3.10+
-- Poetry (for dependency management)
+- Python 3.11+
+- Poetry 2.0+ (for dependency management)
 
 ### Quick Setup
 
@@ -29,17 +29,8 @@ cd trowel
 poetry install
 ```
 
-For full embedding analysis capabilities, install optional dependencies:
-
-```bash
-pip install matplotlib seaborn scikit-learn scipy
-```
-
-For DuckDB support and LinkML-Store embedding generation:
-
-```bash
-pip install duckdb linkml-store llm tiktoken
-```
+This installs everything TROWEL needs, including the embedding, clustering,
+visualization, and fuzzy matching dependencies.
 
 ## Usage
 
@@ -180,9 +171,6 @@ Generate vector embeddings for CSV data using LinkML-Store.
 This command handles the complete embedding pipeline: reading your prepared data, calling LinkML-Store's LLM indexer for each row, storing embeddings in a DuckDB database, and optionally exporting results to CSV for downstream analysis.
 
 **Requirements:**
-- LinkML-Store installed: `pip install linkml-store`
-- LLM embedding dependencies installed: `pip install llm tiktoken`
-- DuckDB installed: `pip install duckdb`
 - `OPENAI_API_KEY` environment variable must be set when using OpenAI embedding models
 
 ```bash
@@ -700,25 +688,21 @@ non-public datasets:
 
 ## Requirements & Dependencies
 
-### Core
-- Python 3.10+
+All of the following are installed by `poetry install`:
+
+- Python 3.11+
 - click (CLI framework)
 - requests (HTTP client)
 - polars (data processing)
 - tqdm (progress bars)
 - openpyxl, xlrd (spreadsheet support)
-
-### Optional (for embeddings)
+- rapidfuzz (fuzzy term matching)
 - numpy, scipy (numerical operations)
 - matplotlib, seaborn (visualization)
 - scikit-learn (dimensionality reduction)
-- duckdb (database access)
-- linkml-store, llm, tiktoken (embedding generation)
+- linkml-store, llm, tiktoken (embedding generation; DuckDB comes with linkml-store)
 
-Install optional dependencies:
-```bash
-pip install matplotlib seaborn scikit-learn scipy duckdb linkml-store llm tiktoken
-```
+SQLAlchemy is held below 2.1 because linkml-store 0.3.2 does not yet work with it.
 
 ## Troubleshooting
 
