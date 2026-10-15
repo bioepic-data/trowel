@@ -1,0 +1,118 @@
+{
+ "cutoff": "2023-10-15",
+ "seed": 20261015,
+ "catalogue_size": 1588,
+ "pool_size": 617,
+ "chosen": [
+  {
+   "id": "ess-dive-fb2af036ad1c82e-20240703T210207291",
+   "doi": "doi:10.15485/2395957",
+   "name": "Active Layer Depth and Permafrost Temperatures at the Teller 47 Field Site, Seward Peninsula, Alaska, 2022",
+   "dateUploaded": "2024-07-03T21:02:07.848Z",
+   "datePublished": "2024",
+   "n_files": 5,
+   "n_readable": 3
+  },
+  {
+   "id": "ess-dive-78cc3ac47dc6813-20260814T183857068",
+   "doi": "doi:10.15485/3412618",
+   "name": "X-ray Absorption Spectroscopy and Neutron Scattering Data, Mineral Incubation Experiment, Walker Branch Watershed, TN (2020 - 2021)",
+   "dateUploaded": "2026-08-14T18:38:59.781Z",
+   "datePublished": "2026",
+   "n_files": 4,
+   "n_readable": 4
+  },
+  {
+   "id": "ess-dive-5f31c67a41b2e5f-20260526T195600115",
+   "doi": "doi:10.15485/3015733",
+   "name": "Dataset for Cruz-O'Byrne et al (2026): \"Divergent biogeochemical responses in upland coastal forest soils to repeated flooding and shifts in water chemistry\"",
+   "dateUploaded": "2026-05-26T19:56:01.717Z",
+   "datePublished": "2026",
+   "n_files": 7,
+   "n_readable": 6
+  },
+  {
+   "id": "ess-dive-85c5ba5bf8abe6a-20241024T180314834",
+   "doi": "doi:10.15485/2475392",
+   "name": "Leaf mass area, leaf carbon and nitrogen content of 18 plant species, Seward Peninsula, Alaska, 2023",
+   "dateUploaded": "2024-10-24T18:03:16.351Z",
+   "datePublished": "2024",
+   "n_files": 5,
+   "n_readable": 5
+  },
+  {
+   "id": "ess-dive-6b1ca2f0ed15088-20260411T001642884",
+   "doi": "doi:10.15485/3025240",
+   "name": "Meteoric 10Be Flux Calibration Data for the East River Watershed, Colorado, USA",
+   "dateUploaded": "2026-04-11T00:16:44.322Z",
+   "datePublished": "2026",
+   "n_files": 10,
+   "n_readable": 2
+  },
+  {
+   "id": "ess-dive-695231d2e982d9e-20251107T162437469",
+   "doi": "doi:10.15485/2589266",
+   "name": "Integrating Characteristic Arctic Vegetation in a Land Surface Model Improves Representation of Carbon Dynamics Across a Tundra Landscape: Modeling Archive",
+   "dateUploaded": "2025-11-07T16:24:39.067Z",
+   "datePublished": "2025",
+   "n_files": 4,
+   "n_readable": 1
+  },
+  {
+   "id": "ess-dive-d33ab17bebf7881-20260701T205206153",
+   "doi": "doi:10.15485/2998439",
+   "name": "Porewater chemistry in Typha-dominated brackish tidal marsh, PIE LTER, Plum Island Sound, MA, July 2022\u2013September 2024",
+   "dateUploaded": "2026-07-01T20:52:07.477Z",
+   "datePublished": "2025",
+   "n_files": 3,
+   "n_readable": 3
+  },
+  {
+   "id": "ess-dive-bd21abc451ce913-20240318T140737414",
+   "doi": "doi:10.15485/2324642",
+   "name": "Model output from simulations of manganese-carbon interactions in temperate forest soil profiles",
+   "dateUploaded": "2024-03-18T14:07:38.383Z",
+   "datePublished": "2024",
+   "n_files": 44,
+   "n_readable": 1
+  },
+  {
+   "id": "ess-dive-01cc25692a834b5-20240806T203936441",
+   "doi": "doi:10.5440/1975126",
+   "name": "Vegetation Warming Experiment: Landscape-scale digital camera imagery for vegetation phenology, Utqiagvik (Barrow), Alaska, 2022",
+   "dateUploaded": "2024-08-06T20:39:37.440Z",
+   "datePublished": "2024",
+   "n_files": 3,
+   "n_readable": 1
+  },
+  {
+   "id": "ess-dive-9899449215f9653-20260605T154523935",
+   "doi": "doi:10.15485/3020155",
+   "name": "Fungal mat growth and leaf colonization at the TRACE warming experiment, Mar - Aug 2024, Luquillo, Puerto Rico",
+   "dateUploaded": "2026-06-05T15:45:25.321Z",
+   "datePublished": "2026",
+   "n_files": 6,
+   "n_readable": 6
+  }
+ ],
+ "skipped": [
+  {
+   "id": "ess-dive-e89fceaa9635753-20260826T163000198",
+   "doi": "doi:10.15485/3487885",
+   "name": "Field and Model Data Associated with the Manuscript \u201cDrivers of Streamflow Intermittency in Humid Regions: 2. Evaluating Controls on Flow Persistence in an Urbanized Catchment\u201d",
+   "dateUploaded": "2026-08-26T16:30:01.322Z",
+   "datePublished": "2026",
+   "n_files": 10,
+   "n_readable": 0
+  },
+  {
+   "id": "ess-dive-c6d465daf63c033-20260425T015705600",
+   "doi": "doi:10.15485/3098419",
+   "name": "Daily, 30 m Resolution NDSI Data for the East River Watershed, CO for 2000-2020",
+   "dateUploaded": "2026-04-25T01:57:16.705Z",
+   "datePublished": "2026",
+   "n_files": 20,
+   "n_readable": 0
+  }
+ ]
+}

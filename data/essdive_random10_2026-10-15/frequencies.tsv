@@ -1,0 +1,52 @@
+cryosphere	1
+earth science	4
+frozen ground	1
+permafrost	1
+permafrost layer thickness	1
+permafrost temperature	1
+energy (ev)	1
+normalized absorption (unitless)	1
+scattering intensity (i)	1
+scattering vector (q)	1
+biomass	1
+biosphere	2
+carbon	1
+ecological dynamics	1
+ecosystem functions	1
+primary production	1
+vegetation	2
+ch4	1
+ch4 flag	1
+ch4 sample id	1
+cl	1
+cl flag	1
+date	1
+depth	1
+fe	1
+fe flag	1
+hs	1
+hs flag	1
+nh4	1
+nh4 flag	1
+po4	1
+po4 flag	1
+rep	1
+site	1
+so4	1
+so4 flag	1
+time	1
+time est	1
+climate indicators	1
+cryospheric indicators	1
+plant phenology	1
+snow cover	1
+snow melt	1
+biological classification	1
+dry days	1
+fungi	1
+land surface	1
+mushrooms	1
+relative growth rate	1
+soil temperature	1
+soils	1
+time-to leaf colonization	1
