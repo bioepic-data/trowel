@@ -1,32 +1,41 @@
-[tool.poetry]
+[project]
 name = "trowel"
 version = "0.0.1"
 description = "TROWEL - a Tool for Retrieving, Organizing, and Wrangling Earth science data and Labels"
-authors = ["caufieldjh <j.harry.caufield@gmail.com>"]
-license = "BSD-3"
+authors = [{ name = "caufieldjh", email = "j.harry.caufield@gmail.com" }]
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 readme = "README.md"
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "click>=8.1.7,<9",
+    "requests>=2.32.3,<3",
+    "polars>=1.19,<3",
+    "tqdm>=4.66.1,<5",
+    "openpyxl>=3.1.2,<4",
+    "xlrd>=2.0.1,<3",
+    "numpy>=1.26,<3",
+    "scikit-learn>=1.4.0,<2",
+    "matplotlib>=3.8.0,<4",
+    "seaborn>=0.13",
+    "scipy>=1.12.0,<2",
+    "rapidfuzz>=3.9",
+    "linkml-store>=0.3.2",
+    # linkml-store 0.3.2 fails on SQLAlchemy 2.1 (ObjectNotExecutableError
+    # in Collection.delete_where). Lift this once linkml-store supports 2.1.
+    "sqlalchemy>=2.0,<2.1",
+    "llm>=0.31",
+    "tiktoken>=0.13",
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-click = "^8.1.7"
-requests = "^2.32.3"
-polars = "^1.19.0"
-tqdm = "^4.66.1"
-openpyxl = "^3.1.2"
-xlrd = "^2.0.1"
-numpy = "^1.24.0"
-scikit-learn = "^1.4.0"
-matplotlib = "^3.8.0"
-scipy = "^1.12.0"
-linkml-store = "^0.3.2"
-llm = "^0.31"
-tiktoken = "^0.13.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 trowel = "trowel.cli:main"
 
+[tool.poetry]
+packages = [{ include = "trowel", from = "src" }]
+
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.5"
+pytest = ">=8.3.5"
 flake8 = "^7.2.0"
 ipykernel = "^7.1.0"
 
@@ -39,5 +48,5 @@ markers = [
 ]
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0"]
 build-backend = "poetry.core.masonry.api"

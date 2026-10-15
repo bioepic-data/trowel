@@ -37,6 +37,8 @@ __all__ = [
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("connectionpool").setLevel(logging.WARNING)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+logging.getLogger("PIL").setLevel(logging.WARNING)
 
 path_option = click.option(
     "-p", "--path", help="Path to a file or directory.", required=False)
@@ -84,7 +86,7 @@ def get_bervo(output):
     logging.info(f"Downloading BERVO ontology from {bervo_url}...")
 
     try:
-        resp = requests.get(bervo_url, stream=True)
+        resp = requests.get(bervo_url, stream=True, timeout=(30, 300))
         resp.raise_for_status()
 
         with open(output, 'wb') as f:

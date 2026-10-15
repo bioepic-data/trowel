@@ -25,11 +25,20 @@ BASE_URL = "https://api.ess-dive.lbl.gov"
 
 ENDPOINT = "packages"
 
+# Headers for file downloads. Do not send a Range header: the ESS-DIVE data
+# server honors it (206 Partial Content), which truncates data dictionaries,
+# FLMD files, XML, and Excel files.
 USER_HEADERS = {
-    "user_agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0",
-    "content-type": "application/json",
-    "Range": "bytes=0-1000",
+    "User-Agent": "trowel (https://github.com/bioepic-data/trowel)",
 }
+
+# (connect, read) timeouts in seconds. The package API can be slow to answer
+# the first request after a period of inactivity.
+API_TIMEOUT = (30, 300)
+FILE_TIMEOUT = 30
+
+# Upper bound on bytes read while looking for a delimited file's header line
+MAX_HEADER_BYTES = 1024 * 1024
 
 PARSIBLE_ENCODINGS = ["text/csv",
                       "text/plain",
@@ -301,8 +310,13 @@ def get_metadata(
             identifier = "doi:" + identifier
 
         get_packages_url = _package_url(identifier)
-        response = requests.get(
-            get_packages_url, headers=headers, verify=True, stream=True)
+        try:
+            response = requests.get(
+                get_packages_url, headers=headers, verify=True, timeout=API_TIMEOUT)
+        except requests.RequestException as e:
+            # Timeouts and connection failures affect one identifier only
+            errors["other_errors"].append(f"{identifier} ({type(e).__name__})")
+            continue
 
         if response.status_code == 200:
             # Success - but will need to restructure
@@ -525,6 +539,30 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename.lower())[1]
 
 
+def _read_first_line_bytes(response, max_bytes: int = MAX_HEADER_BYTES) -> bytes:
+    """Read a streamed response only until its first non-empty line is complete.
+
+    Returns the bytes up to and including that line, so a large data file
+    need not be downloaded in full just to read its header.
+    """
+    buf = b""
+    for chunk in response.iter_content(chunk_size=8192):
+        if not chunk:
+            continue
+        buf += chunk
+        start = 0
+        while True:
+            end = buf.find(b"\n", start)
+            if end == -1:
+                break
+            if buf[start:end].strip():
+                return buf[:end + 1]
+            start = end + 1
+        if len(buf) >= max_bytes:
+            break
+    return buf
+
+
 def _process_flmd_file(row_dict: dict) -> tuple:
     """Process a single FLMD file and return results.
 
@@ -540,7 +578,7 @@ def _process_flmd_file(row_dict: dict) -> tuple:
 
     try:
         response = requests.get(
-            url, headers=USER_HEADERS, verify=True, timeout=30)
+            url, headers=USER_HEADERS, verify=True, timeout=FILE_TIMEOUT)
         if response.status_code == 200:
             try:
                 # Try to decode the content
@@ -585,7 +623,7 @@ def _process_xml_file(row_dict: dict, dataset_id_to_name: dict) -> tuple:
 
     try:
         response = requests.get(
-            url, headers=USER_HEADERS, verify=True, timeout=30)
+            url, headers=USER_HEADERS, verify=True, timeout=FILE_TIMEOUT)
         if response.status_code == 200:
             try:
                 # Try to decode the content
@@ -644,7 +682,7 @@ def _process_data_file(row_dict: dict, dataset_id_to_name: dict, dataset_file_de
     try:
         stream = file_ext not in [".xls", ".xlsx"]
         response = requests.get(url, headers=USER_HEADERS,
-                                verify=True, stream=stream, timeout=30)
+                                verify=True, stream=stream, timeout=FILE_TIMEOUT)
 
         if response.status_code == 200:
             try:
@@ -655,7 +693,12 @@ def _process_data_file(row_dict: dict, dataset_id_to_name: dict, dataset_file_de
 
                 # Process the file based on its type
                 if is_data_dict or file_ext in [".csv", ".txt", ".tsv"]:
-                    content = response.content
+                    if is_data_dict:
+                        content = response.content
+                    else:
+                        # Only the header line is needed from a data file
+                        content = _read_first_line_bytes(response)
+                        response.close()
 
                     # Try to decode
                     try:

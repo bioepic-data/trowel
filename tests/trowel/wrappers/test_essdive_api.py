@@ -11,6 +11,7 @@ from trowel.wrappers.essdive import (
     get_metadata,
     get_variable_names,
     normalize_essdive_token,
+    _read_first_line_bytes,
 )
 
 
@@ -131,6 +132,25 @@ class TestGetMetadata(unittest.TestCase):
             self.assertTrue(request_url.endswith("/packages/ess-dive-test-id"))
 
     @patch('requests.get')
+    def test_get_metadata_continues_after_timeout(self, mock_get):
+        """A timeout on one identifier does not stop the others."""
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json.return_value = {
+            'id': 'ess-dive-ok',
+            'dataset': {'name': 'OK Dataset'},
+        }
+        mock_get.side_effect = [requests.exceptions.ReadTimeout(), ok_response]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_path, _, _ = get_metadata(
+                ['doi:10.1234/slow', 'doi:10.1234/ok'], None, temp_dir
+            )
+            results_df = pl.read_csv(results_path, separator="\t")
+            self.assertEqual(results_df['id'].to_list(), ['ess-dive-ok'])
+            self.assertEqual(mock_get.call_count, 2)
+
+    @patch('requests.get')
     def test_get_metadata_error(self, mock_get):
         """Test get_metadata with API error."""
         # Mock response for failed API call
@@ -181,7 +201,8 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
         # Mock response for CSV file
         csv_response = MagicMock()
         csv_response.status_code = 200
-        csv_response.content = b"Temperature,pH,Conductivity\n25.3,7.2,150"
+        csv_response.iter_content.return_value = iter(
+            [b"Temperature,pH,Con", b"ductivity\n25.3,7.2,150"])
 
         # Mock response for XML file
         xml_response = MagicMock()
@@ -220,7 +241,7 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
                 f.write(self.mock_filetable_data)
 
             # Call the function
-            column_names_path = get_variable_names(filetable_path, temp_dir)
+            column_names_path = get_variable_names(filetable_path, outpath=temp_dir)
 
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
@@ -246,6 +267,22 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
             self.assertIn('column', sources)
             self.assertIn('keyword', sources)
 
+            # Never request partial content; the server honors Range and
+            # would truncate data dictionaries, XML, and Excel files.
+            for call in mock_get.call_args_list:
+                self.assertNotIn("Range", call.kwargs.get("headers", {}))
+
+    def test_read_first_line_bytes(self, mock_get):
+        """Header reader skips blank lines and stops after the first line."""
+        response = MagicMock()
+        response.iter_content.return_value = iter(
+            [b"\n  \nA,B", b",C\n1,2,3\n", b"4,5,6\n"])
+        self.assertEqual(_read_first_line_bytes(response), b"\n  \nA,B,C\n")
+
+        # No newline at all: return everything read
+        response.iter_content.return_value = iter([b"A,B,C"])
+        self.assertEqual(_read_first_line_bytes(response), b"A,B,C")
+
     def test_get_variable_names_error(self, mock_get):
         """Test get_column_names with API error."""
         # Mock response for failed API call
@@ -258,7 +295,7 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
                 f.write(self.mock_filetable_data)
 
             # Call the function
-            column_names_path = get_variable_names(filetable_path, temp_dir)
+            column_names_path = get_variable_names(filetable_path, outpath=temp_dir)
 
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
