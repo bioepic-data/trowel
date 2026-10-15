@@ -220,7 +220,7 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
                 f.write(self.mock_filetable_data)
 
             # Call the function
-            column_names_path = get_variable_names(filetable_path, temp_dir)
+            column_names_path = get_variable_names(filetable_path, outpath=temp_dir)
 
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
@@ -258,7 +258,7 @@ test-id-123\thttps://example.com/data_dict.csv\tdd.csv\ttext/csv"""
                 f.write(self.mock_filetable_data)
 
             # Call the function
-            column_names_path = get_variable_names(filetable_path, temp_dir)
+            column_names_path = get_variable_names(filetable_path, outpath=temp_dir)
 
             # Check if output file was created
             self.assertTrue(os.path.exists(column_names_path))
